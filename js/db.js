@@ -73,7 +73,7 @@ async function getTransactionCategories(uid) {
 
 // Returns all imported Transaction IDs for deduplication
 async function getImportedTxIds(uid) {
-  const snap = await txCol(uid).select().get(); // only fetch doc IDs
+  const snap = await txCol(uid).get();
   return new Set(snap.docs.map(d => d.id));
 }
 
