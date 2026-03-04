@@ -35,6 +35,8 @@ auth.onAuthStateChanged(async user => {
     document.getElementById('app').classList.remove('hidden');
     document.getElementById('user-email').textContent = user.email || user.displayName || '';
 
+    applySettings();
+
     // Pre-load bills cache (used by both bills and transactions tabs)
     await loadBills(user.uid);
 
@@ -81,6 +83,18 @@ async function switchTab(tabName) {
 // ─── Auth buttons ─────────────────────────────────────────────────────────────
 document.getElementById('btn-signin').addEventListener('click', signIn);
 document.getElementById('btn-signout').addEventListener('click', signOut);
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-settings').addEventListener('click', () => {
+  const uid = auth.currentUser?.uid || null;
+  openSettingsModal(uid);
+});
+
+// Settings tab buttons (inside modal — use event delegation on the modal)
+document.getElementById('modal-settings').addEventListener('click', e => {
+  const tab = e.target.closest('.settings-tab-btn');
+  if (tab) _switchSettingsTab(tab.dataset.tab);
+});
 
 // ─── Bills events ─────────────────────────────────────────────────────────────
 document.getElementById('btn-add-bill').addEventListener('click', () => openBillModal(null));
@@ -144,19 +158,73 @@ document.getElementById('btn-import-confirm').addEventListener('click', async ()
 
 document.getElementById('btn-import-cancel').addEventListener('click', cancelImport);
 
+document.getElementById('btn-delete-all-txns').addEventListener('click', async () => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  if (!confirm('Delete ALL transactions? This cannot be undone.')) return;
+  showToast('Deleting…', 'info');
+  const count = await deleteAllTransactions(uid);
+  showToast(`Deleted ${count} transactions`, 'success');
+  await renderTransactionsTab(uid);
+});
+
+document.getElementById('btn-delete-account-txns').addEventListener('click', async () => {
+  const uid      = auth.currentUser?.uid;
+  const acctSel  = document.getElementById('tx-account');
+  const accountId   = acctSel.value;
+  const accountName = acctSel.options[acctSel.selectedIndex]?.text;
+  if (!uid || !accountId) return;
+  if (!confirm(`Delete all transactions from "${accountName}"? This cannot be undone.`)) return;
+  showToast('Deleting…', 'info');
+  const count = await deleteTransactionsByAccount(uid, accountId);
+  showToast(`Deleted ${count} transactions from "${accountName}"`, 'success');
+  await renderTransactionsTab(uid);
+});
+
 document.getElementById('tx-month').addEventListener('change', async () => {
   const uid = auth.currentUser?.uid;
   if (uid) await loadAndRenderTxList(uid);
 });
 
-document.getElementById('tx-account').addEventListener('change', async () => {
+document.getElementById('tx-account').addEventListener('change', async e => {
   const uid = auth.currentUser?.uid;
   if (uid) await loadAndRenderTxList(uid);
+  // Show "Delete Account" only when a specific account is selected
+  const hasAccount = !!e.target.value;
+  document.getElementById('btn-delete-account-txns').classList.toggle('hidden', !hasAccount);
+  if (hasAccount) {
+    const sel = e.target;
+    document.getElementById('btn-delete-account-txns').textContent =
+      `Delete "${sel.options[sel.selectedIndex].text}"`;
+  }
 });
 
 document.getElementById('tx-category').addEventListener('change', async () => {
   const uid = auth.currentUser?.uid;
   if (uid) await loadAndRenderTxList(uid);
+});
+
+document.getElementById('btn-show-hidden').addEventListener('click', async () => {
+  _showHidden = !_showHidden;
+  const uid = auth.currentUser?.uid;
+  if (uid) await loadAndRenderTxList(uid);
+});
+
+// Event delegation for hide/unhide buttons in the transaction list
+document.getElementById('tx-list').addEventListener('click', async e => {
+  const hideBtn   = e.target.closest('.btn-hide-tx');
+  const unhideBtn = e.target.closest('.btn-unhide-tx');
+  const uid       = auth.currentUser?.uid;
+  if (!uid) return;
+
+  if (hideBtn) {
+    await setTransactionHidden(uid, hideBtn.dataset.id, true);
+    await loadAndRenderTxList(uid);
+  }
+  if (unhideBtn) {
+    await setTransactionHidden(uid, unhideBtn.dataset.id, false);
+    await loadAndRenderTxList(uid);
+  }
 });
 
 // Show/hide "new account name" field based on account selector value

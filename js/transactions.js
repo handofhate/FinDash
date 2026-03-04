@@ -1,6 +1,7 @@
 // ── Transactions Tab ──────────────────────────────────────────────────────────
 
 let _pendingImport = [];  // rows waiting for user confirmation
+let _showHidden    = false; // toggle to show/hide hidden transactions
 
 // ─── CSV Parsing ──────────────────────────────────────────────────────────────
 function parseTransactionCSV(file) {
@@ -82,7 +83,10 @@ async function handleCSVFile(file, uid) {
     const newRows  = rows.filter(r => !existing.has(r.txId));
     const dupCount = rows.length - newRows.length;
 
-    _pendingImport = newRows;
+    // Apply import filter rules
+    const filters = await getImportFilters(uid);
+    const { kept, skipped, flagged } = applyImportFilters(newRows, filters);
+    _pendingImport = kept;
 
     // Detect account number from Transaction ID
     const detectedAcctNum = _extractAccountNumber(rows[0]?.txId || '');
@@ -100,23 +104,26 @@ async function handleCSVFile(file, uid) {
     const nameGroup = document.getElementById('new-account-name-group');
     nameGroup.classList.toggle('hidden', !!matchingAcct);
 
-    // Show preview
+    // Show preview stats
     const stats = document.getElementById('import-stats');
     const dateRange = _getDateRange(rows);
-    stats.innerHTML =
+    let statsHTML =
       `<strong>${rows.length}</strong> rows parsed · ` +
-      `<span class="text-green">${newRows.length} new</span> · ` +
-      `<span class="text-muted">${dupCount} already imported</span> · ` +
-      `${dateRange}`;
+      `<span class="text-green">${kept.length} to import</span> · ` +
+      `<span class="text-muted">${dupCount} already imported</span>`;
+    if (skipped.length)  statsHTML += ` · <span class="text-muted">${skipped.length} auto-skipped by filters</span>`;
+    if (flagged.length)  statsHTML += ` · <span style="color:var(--yellow)">${flagged.length} flagged for review</span>`;
+    statsHTML += ` · ${dateRange}`;
+    stats.innerHTML = statsHTML;
 
     const wrap = document.getElementById('import-preview-table-wrap');
-    wrap.innerHTML = buildTxTable(newRows.slice(0, 20), [], true);
-    if (newRows.length > 20) {
-      wrap.innerHTML += `<div class="text-muted" style="padding:8px 12px">…and ${newRows.length - 20} more</div>`;
+    wrap.innerHTML = buildTxTable(kept.slice(0, 20), [], true);
+    if (kept.length > 20) {
+      wrap.innerHTML += `<div class="text-muted" style="padding:8px 12px">…and ${kept.length - 20} more</div>`;
     }
 
     document.getElementById('import-preview').classList.remove('hidden');
-    document.getElementById('btn-import-confirm').disabled = newRows.length === 0;
+    document.getElementById('btn-import-confirm').disabled = kept.length === 0;
     showToast('', 'info');
   } catch (err) {
     showToast('Parse error: ' + err.message, 'error');
@@ -204,31 +211,45 @@ async function loadAndRenderTxList(uid) {
   const yearMonth = document.getElementById('tx-month').value;
   const category  = document.getElementById('tx-category').value;
   const accountId = document.getElementById('tx-account').value;
+  const s         = getSettings();
 
   let txns = await getTransactions(uid, { yearMonth, category });
   if (accountId) txns = txns.filter(t => t.accountId === accountId);
-  const bills = _billsCache || [];
+  if (s.hideZeroTx) txns = txns.filter(t => t.amount !== 0);
 
-  const listEl = document.getElementById('tx-list');
+  // Split hidden from visible for summary; when _showHidden is true, render all
+  const visibleTxns = _showHidden ? txns : txns.filter(t => !t.hidden);
+  const bills       = _billsCache || [];
+  const listEl      = document.getElementById('tx-list');
 
-  if (!txns.length) {
+  // Update show-hidden button label
+  const hiddenCount = txns.filter(t => t.hidden).length;
+  const showHiddenBtn = document.getElementById('btn-show-hidden');
+  if (showHiddenBtn) {
+    showHiddenBtn.textContent = _showHidden
+      ? 'Hide hidden'
+      : `Show Hidden${hiddenCount ? ` (${hiddenCount})` : ''}`;
+  }
+
+  if (!visibleTxns.length) {
     listEl.innerHTML = '<div class="empty-state">No transactions found. Import a CSV to get started.</div>';
     document.getElementById('tx-summary').classList.add('hidden');
     return;
   }
 
-  // Summary
+  // Summary — always excludes hidden transactions regardless of _showHidden
+  const summaryTxns = txns.filter(t => !t.hidden);
   let totalSpent = 0, totalIncome = 0;
-  txns.forEach(t => {
+  summaryTxns.forEach(t => {
     if (t.type === 'Debit')  totalSpent  += t.amount;
     if (t.type === 'Credit') totalIncome += t.amount;
   });
   document.getElementById('tx-total-spent').textContent  = fmt(totalSpent);
   document.getElementById('tx-total-income').textContent = fmt(totalIncome);
-  document.getElementById('tx-count').textContent        = txns.length;
+  document.getElementById('tx-count').textContent        = summaryTxns.length;
   document.getElementById('tx-summary').classList.remove('hidden');
 
-  listEl.innerHTML = buildTxTable(txns, bills, false);
+  listEl.innerHTML = buildTxTable(visibleTxns, bills, false);
 }
 
 // ─── Recurring Bill Detection ──────────────────────────────────────────────────
@@ -432,43 +453,68 @@ function dismissAllSuggestions() {
 function buildTxTable(txns, bills, compact) {
   const billNames = (bills || []).map(b => (b.company || '').toLowerCase());
 
-  const rows = txns.map(t => {
-    const isRecurring = billNames.some(name => name && t.description.toLowerCase().includes(name));
-    const amtClass   = t.type === 'Credit' ? 'tx-amount-credit' : 'tx-amount-debit';
-    const sign       = t.type === 'Credit' ? '+' : '-';
-    const rowClass   = isRecurring ? 'tx-recurring' : '';
-    const recurBadge = isRecurring ? '<span class="badge badge-recurring" title="Matches a known bill">recurring</span>' : '';
-    const typeBadge  = t.type === 'Credit'
-      ? '<span class="badge badge-credit">Credit</span>'
-      : '<span class="badge badge-debit">Debit</span>';
-    const acctCell   = t.accountName ? `<span class="account-chip">${esc(t.accountName)}</span>` : '<span class="text-muted">—</span>';
-
-    if (compact) {
-      return `<tr class="${rowClass}">
+  if (compact) {
+    // Fixed columns for import preview — always same 4 columns
+    const rows = txns.map(t => {
+      const amtClass   = t.type === 'Credit' ? 'tx-amount-credit' : 'tx-amount-debit';
+      const sign       = t.type === 'Credit' ? '+' : '-';
+      const flagBadge  = t._flagged
+        ? `<span class="badge badge-quarterly" title="${esc(t._flagReason)}">review</span>` : '';
+      return `<tr class="${t._flagged ? 'tx-flagged' : ''}">
         <td>${esc(t.postingDate)}</td>
-        <td>${esc(t.description)} ${recurBadge}</td>
+        <td>${esc(t.description)} ${flagBadge}</td>
         <td>${esc(t.category)}</td>
         <td class="${amtClass}">${sign}${fmt(t.amount)}</td>
       </tr>`;
-    }
+    }).join('');
+    return `<table>
+      <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  // Full mode — respect column visibility settings
+  const s    = getSettings();
+  const cols = TX_COLUMNS.filter(c => s[c.key] !== false);
+
+  const rows = txns.map(t => {
+    const isRecurring = billNames.some(name => name && t.description.toLowerCase().includes(name));
+    const amtClass    = t.type === 'Credit' ? 'tx-amount-credit' : 'tx-amount-debit';
+    const sign        = t.type === 'Credit' ? '+' : '-';
+    const recurBadge  = isRecurring ? '<span class="badge badge-recurring" title="Matches a known bill">recurring</span>' : '';
+    const typeBadge   = t.type === 'Credit'
+      ? '<span class="badge badge-credit">Credit</span>'
+      : '<span class="badge badge-debit">Debit</span>';
+    const acctCell    = t.accountName
+      ? `<span class="account-chip">${esc(t.accountName)}</span>`
+      : '<span class="text-muted">—</span>';
+
+    const isHidden  = !!t.hidden;
+    const rowClass  = isHidden ? 'tx-hidden' : (isRecurring ? 'tx-recurring' : '');
+    const actionBtn = isHidden
+      ? `<button class="btn btn-ghost btn-sm btn-unhide-tx" data-id="${t.id}">Unhide</button>`
+      : `<button class="btn-icon btn-hide-tx" data-id="${t.id}" title="Hide this transaction">&#128065;</button>`;
+
+    const cellMap = {
+      col_date:        `<td>${esc(t.postingDate)}</td>`,
+      col_description: `<td>${esc(t.description)} ${recurBadge}</td>`,
+      col_category:    `<td>${esc(t.category)}</td>`,
+      col_account:     `<td>${acctCell}</td>`,
+      col_type:        `<td>${typeBadge}</td>`,
+      col_amount:      `<td class="${amtClass}">${sign}${fmt(t.amount)}</td>`,
+      col_balance:     `<td class="text-muted">${t.balance !== undefined ? fmt(t.balance) : ''}</td>`,
+    };
 
     return `<tr class="${rowClass}">
-      <td>${esc(t.postingDate)}</td>
-      <td>${esc(t.description)} ${recurBadge}</td>
-      <td>${esc(t.category)}</td>
-      <td>${acctCell}</td>
-      <td>${typeBadge}</td>
-      <td class="${amtClass}">${sign}${fmt(t.amount)}</td>
-      <td class="text-muted">${t.balance !== undefined ? fmt(t.balance) : ''}</td>
+      ${cols.map(c => cellMap[c.key]).join('')}
+      <td class="tx-actions">${actionBtn}</td>
     </tr>`;
   }).join('');
 
-  const headers = compact
-    ? ['Date', 'Description', 'Category', 'Amount']
-    : ['Date', 'Description', 'Category', 'Account', 'Type', 'Amount', 'Balance'];
+  const headers = [...cols.map(c => `<th>${c.label}</th>`), '<th></th>'].join('');
 
   return `<table>
-    <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+    <thead><tr>${headers}</tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }

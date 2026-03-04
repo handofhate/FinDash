@@ -28,6 +28,7 @@
       <span class="app-title">Finance Dashboard</span>
       <div class="header-right">
         <span id="user-email" class="user-email"></span>
+        <button id="btn-settings" class="btn btn-ghost btn-sm">&#9881; Settings</button>
         <button id="btn-signout" class="btn btn-ghost btn-sm">Sign out</button>
       </div>
     </header>
@@ -104,6 +105,9 @@
           </select>
         </div>
         <div class="toolbar-right">
+          <button id="btn-show-hidden" class="btn btn-ghost btn-sm">Show Hidden</button>
+          <button id="btn-delete-account-txns" class="btn btn-danger btn-sm hidden" title="Delete transactions from the selected account">Delete Account</button>
+          <button id="btn-delete-all-txns" class="btn btn-danger btn-sm">Delete All</button>
           <button id="btn-import-csv" class="btn btn-primary btn-sm">Import CSV</button>
           <input type="file" id="csv-file-input" accept=".csv" class="hidden" />
         </div>
@@ -304,6 +308,24 @@
     </div>
   </div>
 
+  <!-- ── SETTINGS MODAL ────────────────────────────────────────── -->
+  <div id="modal-settings" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-settings-title">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h2 id="modal-settings-title">Settings</h2>
+        <button class="modal-close" data-close="modal-settings">&times;</button>
+      </div>
+      <div class="modal-body" style="gap:0;padding:0;flex-direction:column">
+        <div class="settings-tabs">
+          <button class="settings-tab-btn active" data-tab="display">Display</button>
+          <button class="settings-tab-btn" data-tab="filters">Import Filters</button>
+        </div>
+        <div id="settings-display-tab" class="settings-tab-content" style="padding:20px"></div>
+        <div id="settings-filters-tab" class="settings-tab-content hidden" style="padding:20px"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── TOAST ──────────────────────────────────────────────────── -->
   <div id="toast" class="toast hidden"></div>
 
@@ -320,6 +342,7 @@
   <script src="js/firebase-config.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/db.js"></script>
+  <script src="js/settings.js"></script>
   <script src="js/bills.js"></script>
   <script src="js/transactions.js"></script>
   <script src="js/charts.js"></script>

@@ -71,13 +71,12 @@ async function getTransactions(uid, { yearMonth, category } = {}) {
   let query = txCol(uid).orderBy('postingDate', 'desc');
   if (yearMonth) query = query.where('yearMonth', '==', yearMonth);
   if (category)  query = query.where('category', '==', category);
-  const snap = await query.limit(500).get();
+  const snap = await query.limit(5000).get();
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 async function getTransactionMonths(uid) {
-  // Returns sorted list of distinct YYYY-MM strings
-  const snap = await txCol(uid).orderBy('postingDate', 'desc').limit(500).get();
+  const snap = await txCol(uid).orderBy('postingDate', 'desc').limit(5000).get();
   const months = new Set();
   snap.docs.forEach(d => {
     const ym = d.data().yearMonth;
@@ -121,6 +120,53 @@ async function importTransactions(uid, rows) {
 
 // Fetch all transactions (for charts aggregation)
 async function getAllTransactions(uid) {
-  const snap = await txCol(uid).orderBy('postingDate', 'desc').limit(2000).get();
+  const snap = await txCol(uid).orderBy('postingDate', 'desc').limit(10000).get();
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// ─── Transaction deletion ─────────────────────────────────────────────────────
+async function _batchDelete(docs) {
+  const BATCH_SIZE = 400;
+  for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+    const batch = db.batch();
+    docs.slice(i, i + BATCH_SIZE).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  return docs.length;
+}
+
+async function deleteAllTransactions(uid) {
+  const snap = await txCol(uid).get();
+  return _batchDelete(snap.docs);
+}
+
+async function deleteTransactionsByAccount(uid, accountId) {
+  const snap = await txCol(uid).where('accountId', '==', accountId).get();
+  return _batchDelete(snap.docs);
+}
+
+async function setTransactionHidden(uid, txId, hidden) {
+  await txCol(uid).doc(txId).set({ hidden }, { merge: true });
+}
+
+// ─── Import Filters ───────────────────────────────────────────────────────────
+const filtersCol = uid => db.collection('users').doc(uid).collection('importFilters');
+
+async function getImportFilters(uid) {
+  const snap = await filtersCol(uid).get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+async function saveImportFilter(uid, filter) {
+  const { id, ...data } = filter;
+  if (id) {
+    await filtersCol(uid).doc(id).set(data, { merge: true });
+    return id;
+  }
+  const ref = await filtersCol(uid).add(data);
+  return ref.id;
+}
+
+async function deleteImportFilter(uid, filterId) {
+  await filtersCol(uid).doc(filterId).delete();
 }
