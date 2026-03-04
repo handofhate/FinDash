@@ -85,6 +85,24 @@ document.getElementById('btn-signout').addEventListener('click', signOut);
 // ─── Bills events ─────────────────────────────────────────────────────────────
 document.getElementById('btn-add-bill').addEventListener('click', () => openBillModal(null));
 
+document.getElementById('btn-scan-recurring').addEventListener('click', async () => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  showToast('Scanning transactions…', 'info');
+  await renderRecurringSuggestions(uid);
+  showToast('Scan complete', 'success');
+});
+
+document.getElementById('btn-dismiss-suggestions').addEventListener('click', dismissAllSuggestions);
+
+// Event delegation for suggestion cards (add / dismiss buttons)
+document.getElementById('recurring-suggestions').addEventListener('click', e => {
+  const addBtn     = e.target.closest('.btn-add-suggestion');
+  const dismissBtn = e.target.closest('.btn-dismiss-suggestion');
+  if (addBtn)     openBillModalFromSuggestion(addBtn);
+  if (dismissBtn) dismissSuggestion(dismissBtn.dataset.desc);
+});
+
 document.getElementById('bills-month').addEventListener('change', async e => {
   _billsMonth = e.target.value;
   const uid = auth.currentUser?.uid;

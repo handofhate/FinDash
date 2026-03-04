@@ -47,6 +47,7 @@
           <input type="month" id="bills-month" />
         </div>
         <div class="toolbar-right">
+          <button id="btn-scan-recurring" class="btn btn-ghost btn-sm">Scan for Recurring</button>
           <button id="btn-add-bill" class="btn btn-primary btn-sm">+ Add Bill</button>
         </div>
       </div>
@@ -68,6 +69,18 @@
           <span class="summary-label">Bills Paid</span>
           <span id="summary-count" class="summary-value">0 / 0</span>
         </div>
+      </div>
+
+      <!-- Recurring bill suggestions (populated after CSV import or manual scan) -->
+      <div id="recurring-suggestions" class="recurring-suggestions hidden">
+        <div class="suggestions-header">
+          <div>
+            <h3>Suggested Recurring Bills</h3>
+            <p class="text-muted" style="font-size:12px;margin-top:2px">Detected from your transaction history. Review and add the ones you want to track.</p>
+          </div>
+          <button id="btn-dismiss-suggestions" class="btn btn-ghost btn-sm">Dismiss All</button>
+        </div>
+        <div id="suggestions-list" class="suggestions-list"></div>
       </div>
 
       <div id="bills-list" class="bills-list">

@@ -162,6 +162,28 @@ html, body {
   font-size: 11px; color: var(--green); margin-top: 3px;
 }
 
+/* ── Recurring Suggestions ────────────────────────────────────── */
+.recurring-suggestions {
+  background: #141b2d; border: 1px solid #2a3a6e;
+  border-radius: var(--radius); padding: 16px; margin-bottom: 20px;
+}
+.suggestions-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  margin-bottom: 12px;
+}
+.suggestions-header h3 { font-size: 14px; font-weight: 600; color: var(--text); }
+.suggestions-list { display: flex; flex-direction: column; gap: 8px; }
+.suggestion-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px 14px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.suggestion-info { flex: 1; min-width: 0; }
+.suggestion-name { font-weight: 600; font-size: 13px; }
+.suggestion-meta { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+.suggestion-amount { font-weight: 700; font-size: 15px; flex-shrink: 0; }
+.suggestion-conf { font-size: 11px; flex-shrink: 0; min-width: 60px; text-align: right; }
+
 /* ── Empty State ──────────────────────────────────────────────── */
 .empty-state {
   text-align: center; color: var(--text-muted); padding: 48px 20px;
