@@ -359,9 +359,17 @@ function detectRecurringCharges(transactions, existingBills) {
 
     const topAccount = Object.entries(accounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
+    const freqScore    = Math.round(baseConf * 0.5 * 100);
+    const recencyScore = Math.round(recencyFactor * 0.35 * 100);
+    const countScore   = Math.round(countFactor * 0.15 * 100);
+
     suggestions.push({
-      description: display,
-      amount:      amountConsistent ? Math.round(avgAmount * 100) / 100 : null,
+      description:         display,
+      amount:              amountConsistent ? Math.round(avgAmount * 100) / 100 : null,
+      mostRecentAmount:    Math.round(amounts[amounts.length - 1] * 100) / 100,
+      mostRecentDayOrdinal: _ordinal(dates[dates.length - 1].getDate()),
+      txnHistory:          sorted.map(t => ({ date: t.postingDate, amount: t.amount })),
+      confidenceBreakdown: { freq: freqScore, recency: recencyScore, count: countScore },
       frequency,
       confidence,
       occurrences: txns.length,
@@ -384,6 +392,7 @@ function detectRecurringCharges(transactions, existingBills) {
 let _pendingSuggestions = [];
 let _dismissedDescs     = new Set();
 let _currentSuggIdx     = 0;
+let _activeSuggestion   = null; // suggestion currently staged for bill modal (not yet saved)
 
 async function renderRecurringSuggestions(uid) {
   const panel = document.getElementById('recurring-suggestions');
@@ -414,8 +423,19 @@ function _renderCurrentSuggestion() {
 function _suggestionDetailHTML(s) {
   const confPct   = Math.round(s.confidence * 100);
   const confColor = s.confidence >= 0.75 ? 'var(--green)' : s.confidence >= 0.6 ? 'var(--yellow)' : 'var(--text-muted)';
-  const amtText   = s.amount != null ? fmt(s.amount) : 'Variable amount';
+  const amtText   = s.amount != null
+    ? fmt(s.amount)
+    : `Variable${s.mostRecentAmount ? ` (last: ${fmt(s.mostRecentAmount)})` : ''}`;
   const freqLabel = { monthly: 'Monthly', quarterly: 'Quarterly', annual: 'Annual' }[s.frequency] || s.frequency;
+  const bd        = s.confidenceBreakdown || {};
+  const confTitle = `Frequency pattern: ${bd.freq || 0}%&#10;Recency: ${bd.recency || 0}%&#10;Occurrence count: ${bd.count || 0}%`;
+  const occLabel  = `${s.occurrences} occurrence${s.occurrences !== 1 ? 's' : ''}`;
+
+  const txnRows = (s.txnHistory || []).slice().reverse()
+    .map(t => `<tr>
+      <td style="padding:2px 0;color:var(--text-muted)">${esc(t.date)}</td>
+      <td style="padding:2px 0 2px 16px;text-align:right;font-weight:600">${fmt(t.amount)}</td>
+    </tr>`).join('');
 
   return `
     <div class="suggestion-detail">
@@ -427,10 +447,21 @@ function _suggestionDetailHTML(s) {
         ${s.accountName ? `<span class="account-chip">${esc(s.accountName)}</span>` : ''}
       </div>
       <div class="suggestion-detail-stats">
-        <span>${s.occurrences} occurrence${s.occurrences !== 1 ? 's' : ''}</span>
+        <span class="btn-sugg-toggle-txns" data-count="${s.occurrences}"
+          style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px"
+          title="Click to see all occurrences">${occLabel} ▾</span>
         <span>Last: ${esc(s.lastDate)}</span>
         <span>${esc(s.category)}</span>
-        <span style="color:${confColor}">${confPct}% confidence</span>
+        <span style="color:${confColor};cursor:help" title="${confTitle}">${confPct}% confidence ⓘ</span>
+      </div>
+      <div class="suggestion-txn-list hidden" style="margin-top:10px">
+        <table style="font-size:12px;border-collapse:collapse;width:100%">
+          <thead><tr>
+            <th style="text-align:left;color:var(--text-muted);font-weight:500;padding-bottom:4px">Date</th>
+            <th style="text-align:right;color:var(--text-muted);font-weight:500;padding-bottom:4px;padding-left:16px">Amount</th>
+          </tr></thead>
+          <tbody>${txnRows}</tbody>
+        </table>
       </div>
     </div>`;
 }
@@ -450,26 +481,53 @@ function skipCurrentSuggestion() {
 
 function addCurrentSuggestion() {
   if (!_pendingSuggestions.length) return;
-  const s = _pendingSuggestions[_currentSuggIdx];
+  _activeSuggestion = _pendingSuggestions[_currentSuggIdx];
 
-  // Remove from pending before opening modal
-  _dismissedDescs.add(_pendingSuggestions.splice(_currentSuggIdx, 1)[0].description);
-  if (_currentSuggIdx >= _pendingSuggestions.length) _currentSuggIdx = 0;
+  // Advance panel to next card while modal is open (suggestion stays in list until bill is saved)
+  if (_pendingSuggestions.length > 1) {
+    _currentSuggIdx = (_currentSuggIdx + 1) % _pendingSuggestions.length;
+  }
   _renderCurrentSuggestion();
 
+  const s = _activeSuggestion;
   // Pre-fill bill modal
+  // Amount: use consistent average, or fall back to most recent for variable bills
+  const amountVal = s.amount != null
+    ? s.amount.toFixed(2)
+    : (s.mostRecentAmount ? s.mostRecentAmount.toFixed(2) : '');
+  // Due day: use predicted pattern, or fall back to most recent date's day-of-month
+  const dueDayVal = s.dueDay || s.mostRecentDayOrdinal || '';
+
   document.getElementById('modal-bill-title').textContent  = 'Add Bill';
   document.getElementById('bill-id').value                 = '';
   document.getElementById('bill-company').value            = s.description;
   document.getElementById('bill-service').value            = s.category || '';
-  document.getElementById('bill-due-day').value            = s.dueDay || '';
-  document.getElementById('bill-amount').value             = s.amount != null ? s.amount.toFixed(2) : '';
+  document.getElementById('bill-due-day').value            = dueDayVal;
+  document.getElementById('bill-amount').value             = amountVal;
   document.getElementById('bill-frequency').value          = s.frequency || 'monthly';
   document.getElementById('bill-autopay').checked          = false;
   document.getElementById('bill-linked-account').value     = s.accountName || '';
   document.getElementById('bill-notes').value              = '';
   document.getElementById('bill-active').checked           = true;
   openModal('modal-bill');
+}
+
+// Called after bill form is successfully saved — removes the staged suggestion from the list
+function confirmDismissActiveSuggestion() {
+  if (!_activeSuggestion) return;
+  const idx = _pendingSuggestions.findIndex(s => s.description === _activeSuggestion.description);
+  if (idx !== -1) {
+    _pendingSuggestions.splice(idx, 1);
+    _dismissedDescs.add(_activeSuggestion.description);
+    if (_currentSuggIdx >= _pendingSuggestions.length) _currentSuggIdx = 0;
+    _renderCurrentSuggestion();
+  }
+  _activeSuggestion = null;
+}
+
+// Called when bill modal closes without saving (cancel/escape/click-outside)
+function clearActiveSuggestion() {
+  _activeSuggestion = null;
 }
 
 function dismissAllSuggestions() {

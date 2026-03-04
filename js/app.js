@@ -124,7 +124,9 @@ document.getElementById('bills-month').addEventListener('change', async e => {
 document.getElementById('form-bill').addEventListener('submit', async e => {
   e.preventDefault();
   const uid = auth.currentUser?.uid;
-  if (uid) await saveBillForm(uid);
+  if (!uid) return;
+  const saved = await saveBillForm(uid);
+  if (saved) confirmDismissActiveSuggestion();
 });
 
 document.getElementById('form-paid').addEventListener('submit', async e => {
@@ -246,19 +248,38 @@ document.getElementById('btn-refresh-charts').addEventListener('click', async ()
 
 // ─── Modal close buttons ──────────────────────────────────────────────────────
 document.querySelectorAll('[data-close]').forEach(btn => {
-  btn.addEventListener('click', () => closeModal(btn.dataset.close));
+  btn.addEventListener('click', () => {
+    if (btn.dataset.close === 'modal-bill') clearActiveSuggestion();
+    closeModal(btn.dataset.close);
+  });
 });
 
 // Close modal on overlay click
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
   overlay.addEventListener('click', e => {
-    if (e.target === overlay) closeModal(overlay.id);
+    if (e.target === overlay) {
+      if (overlay.id === 'modal-bill') clearActiveSuggestion();
+      closeModal(overlay.id);
+    }
   });
 });
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    clearActiveSuggestion();
     document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => closeModal(m.id));
   }
+});
+
+// Occurrence toggle in suggestion card
+document.getElementById('recurring-suggestions').addEventListener('click', e => {
+  const btn = e.target.closest('.btn-sugg-toggle-txns');
+  if (!btn) return;
+  const list = btn.closest('.suggestion-detail').querySelector('.suggestion-txn-list');
+  if (!list) return;
+  list.classList.toggle('hidden');
+  const count  = btn.dataset.count;
+  const plural = count !== '1' ? 's' : '';
+  btn.textContent = `${count} occurrence${plural} ${list.classList.contains('hidden') ? '▾' : '▲'}`;
 });

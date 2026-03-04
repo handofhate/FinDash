@@ -181,8 +181,10 @@ async function saveBillForm(uid) {
     closeModal('modal-bill');
     showToast(id ? 'Bill updated' : 'Bill added', 'success');
     await renderBillsTab(uid);
+    return true;
   } catch (err) {
     showToast('Error saving bill: ' + err.message, 'error');
+    return false;
   }
 }
 
