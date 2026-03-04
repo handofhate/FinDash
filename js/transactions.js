@@ -482,12 +482,8 @@ function skipCurrentSuggestion() {
 function addCurrentSuggestion() {
   if (!_pendingSuggestions.length) return;
   _activeSuggestion = _pendingSuggestions[_currentSuggIdx];
-
-  // Advance panel to next card while modal is open (suggestion stays in list until bill is saved)
-  if (_pendingSuggestions.length > 1) {
-    _currentSuggIdx = (_currentSuggIdx + 1) % _pendingSuggestions.length;
-  }
-  _renderCurrentSuggestion();
+  // Panel stays on current suggestion while modal is open.
+  // confirmDismissActiveSuggestion() advances after successful save.
 
   const s = _activeSuggestion;
   // Pre-fill bill modal

@@ -254,15 +254,7 @@ document.querySelectorAll('[data-close]').forEach(btn => {
   });
 });
 
-// Close modal on overlay click
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-  overlay.addEventListener('click', e => {
-    if (e.target === overlay) {
-      if (overlay.id === 'modal-bill') clearActiveSuggestion();
-      closeModal(overlay.id);
-    }
-  });
-});
+// Clicking outside a modal does nothing — use Cancel button or Escape to close
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
