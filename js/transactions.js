@@ -196,6 +196,30 @@ function _parseTxDate(str) {
   return new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
 }
 
+function _ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function _predictDueDay(sortedTxns) {
+  // Extract the day-of-month from each posting date
+  const days = sortedTxns.map(t => _parseTxDate(t.postingDate).getDate());
+
+  // Count how often each day appears
+  const counts = {};
+  days.forEach(d => { counts[d] = (counts[d] || 0) + 1; });
+  const [[topDay, topCount]] = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+  // Accept prediction if the most common day covers ≥ half the occurrences
+  // OR if all days are within a 3-day window of each other (bank processing delays)
+  const min = Math.min(...days), max = Math.max(...days);
+  if (topCount >= Math.ceil(days.length / 2) || (max - min) <= 3) {
+    return _ordinal(parseInt(topDay, 10));
+  }
+  return null;
+}
+
 function detectRecurringCharges(transactions, existingBills) {
   const debits = transactions.filter(t => t.type === 'Debit' && t.amount > 0);
 
@@ -251,12 +275,13 @@ function detectRecurringCharges(transactions, existingBills) {
 
     suggestions.push({
       description: display,
-      amount:      amountConsistent ? avgAmount : null,
+      amount:      amountConsistent ? Math.round(avgAmount * 100) / 100 : null,
       frequency,
       confidence,
       occurrences: txns.length,
       lastDate:    sorted[sorted.length - 1].postingDate,
       category,
+      dueDay:      _predictDueDay(sorted),
     });
   });
 
@@ -288,26 +313,28 @@ async function renderRecurringSuggestions(uid) {
 }
 
 function suggestionCardHTML(s) {
-  const confPct  = Math.round(s.confidence * 100);
+  const confPct   = Math.round(s.confidence * 100);
   const confColor = s.confidence >= 0.75 ? 'var(--green)' : s.confidence >= 0.5 ? 'var(--yellow)' : 'var(--text-muted)';
-  const amtText  = s.amount ? fmt(s.amount) : 'variable';
+  const amtText   = s.amount != null ? fmt(s.amount) : 'variable';
   const freqLabel = s.frequency.charAt(0).toUpperCase() + s.frequency.slice(1);
+  const dueMeta   = s.dueDay ? ` · due ~${esc(s.dueDay)}` : '';
 
   return `
     <div class="suggestion-card" data-desc="${esc(s.description)}">
       <div class="suggestion-info">
         <div class="suggestion-name">${esc(s.description)}</div>
         <div class="suggestion-meta">
-          ${esc(s.category)} · ${freqLabel} · seen ${s.occurrences}× · last ${esc(s.lastDate)}
+          ${esc(s.category)} · ${freqLabel}${dueMeta} · seen ${s.occurrences}× · last ${esc(s.lastDate)}
         </div>
       </div>
       <div class="suggestion-amount">${amtText}</div>
       <div class="suggestion-conf" style="color:${confColor}" title="Detection confidence">${confPct}% match</div>
       <button class="btn btn-primary btn-sm btn-add-suggestion"
         data-desc="${esc(s.description)}"
-        data-amount="${s.amount ?? ''}"
+        data-amount="${s.amount != null ? s.amount.toFixed(2) : ''}"
         data-frequency="${esc(s.frequency)}"
-        data-category="${esc(s.category)}">
+        data-category="${esc(s.category)}"
+        data-dueday="${esc(s.dueDay || '')}">
         + Add as Bill
       </button>
       <button class="btn-icon btn-dismiss-suggestion" data-desc="${esc(s.description)}" title="Dismiss">✕</button>
@@ -320,7 +347,7 @@ function openBillModalFromSuggestion(btn) {
   document.getElementById('bill-id').value              = '';
   document.getElementById('bill-company').value         = btn.dataset.desc;
   document.getElementById('bill-service').value         = btn.dataset.category || '';
-  document.getElementById('bill-due-day').value         = '';
+  document.getElementById('bill-due-day').value         = btn.dataset.dueday || '';
   document.getElementById('bill-amount').value          = btn.dataset.amount || '';
   document.getElementById('bill-frequency').value       = btn.dataset.frequency || 'monthly';
   document.getElementById('bill-autopay').checked       = false;
