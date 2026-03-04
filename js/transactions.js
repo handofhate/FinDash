@@ -314,40 +314,49 @@ function detectRecurringCharges(transactions, existingBills) {
   Object.values(groups).forEach(({ display, txns, category, accounts }) => {
     if (txns.length < 2) return;
 
-    const sorted = [...txns].sort((a, b) => _parseTxDate(a.postingDate) - _parseTxDate(b.postingDate));
-
+    const sorted  = [...txns].sort((a, b) => _parseTxDate(a.postingDate) - _parseTxDate(b.postingDate));
+    const dates   = sorted.map(t => _parseTxDate(t.postingDate));
     const amounts = sorted.map(t => t.amount);
-    const avgAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
-    const amountRange = Math.max(...amounts) - Math.min(...amounts);
-    const amountConsistent = avgAmount > 0 && (amountRange / avgAmount) < 0.15;
+
+    // Amount consistency — within 10%
+    const avgAmount       = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+    const amountRange     = Math.max(...amounts) - Math.min(...amounts);
+    const amountConsistent = avgAmount > 0 && (amountRange / avgAmount) < 0.10;
 
     // Days between each occurrence
-    const dates = sorted.map(t => _parseTxDate(t.postingDate));
     const gaps = [];
-    for (let i = 1; i < dates.length; i++) {
-      gaps.push((dates[i] - dates[i - 1]) / 86400000);
-    }
+    for (let i = 1; i < dates.length; i++) gaps.push((dates[i] - dates[i - 1]) / 86400000);
     const avgGap = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0;
 
-    // Classify frequency
-    let frequency = null;
-    let freqConf  = 0;
-    if (avgGap >= 25 && avgGap <= 35)    { frequency = 'monthly';   freqConf = 0.9; }
-    else if (avgGap >= 85 && avgGap <= 100)  { frequency = 'quarterly'; freqConf = 0.75; }
-    else if (avgGap >= 355 && avgGap <= 375) { frequency = 'annual';    freqConf = 0.75; }
-    else if (amountConsistent && txns.length >= 2) { frequency = 'monthly'; freqConf = 0.4; }
+    // Must match a clear frequency pattern — no catch-all fallback
+    let frequency = null, freqConf = 0;
+    if      (avgGap >= 25 && avgGap <= 35)    { frequency = 'monthly';   freqConf = 0.9; }
+    else if (avgGap >= 85 && avgGap <= 100)   { frequency = 'quarterly'; freqConf = 0.75; }
+    else if (avgGap >= 355 && avgGap <= 375)  { frequency = 'annual';    freqConf = 0.75; }
+    else return;
 
-    if (!frequency) return;
+    // Recency: how long since last occurrence (35% of score)
+    const daysSinceLast = (new Date() - dates[dates.length - 1]) / 86400000;
+    const recencyFactor = daysSinceLast <= 45  ? 1.0
+                        : daysSinceLast <= 90  ? 0.8
+                        : daysSinceLast <= 180 ? 0.6
+                        : daysSinceLast <= 365 ? 0.4
+                        : 0.2;
 
-    const confidence = amountConsistent ? freqConf : freqConf * 0.6;
-    if (confidence < 0.3) return;
+    // Occurrence count: caps at 5+ sightings (15% of score)
+    const countFactor = Math.min(txns.length / 5, 1.0);
+
+    // Combined: frequency pattern (50%) + recency (35%) + count (15%)
+    const baseConf   = amountConsistent ? freqConf : freqConf * 0.65;
+    const confidence = baseConf * 0.5 + recencyFactor * 0.35 + countFactor * 0.15;
+
+    if (confidence < 0.45) return;
 
     // Skip if already tracked as a bill
-    const normDisplay = _normalizeDesc(display);
+    const normDisplay    = _normalizeDesc(display);
     const alreadyTracked = trackedNames.some(n => n && (normDisplay.includes(n) || n.includes(normDisplay)));
     if (alreadyTracked) return;
 
-    // Most-used account for this merchant
     const topAccount = Object.entries(accounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
     suggestions.push({
@@ -357,96 +366,116 @@ function detectRecurringCharges(transactions, existingBills) {
       confidence,
       occurrences: txns.length,
       lastDate:    sorted[sorted.length - 1].postingDate,
+      lastDateMs:  dates[dates.length - 1].getTime(),
       category,
       dueDay:      _predictDueDay(sorted),
       accountName: topAccount,
     });
   });
 
-  return suggestions.sort((a, b) => b.confidence - a.confidence || b.occurrences - a.occurrences);
+  // Sort: confidence descending; break ties by most recent
+  return suggestions.sort((a, b) => {
+    const diff = b.confidence - a.confidence;
+    return Math.abs(diff) > 0.05 ? diff : b.lastDateMs - a.lastDateMs;
+  });
 }
 
-// ─── Suggestions Panel ────────────────────────────────────────────────────────
-let _dismissedSuggestions = new Set(); // descriptions dismissed this session
+// ─── Suggestions Panel (Tinder-style) ────────────────────────────────────────
+let _pendingSuggestions = [];
+let _dismissedDescs     = new Set();
+let _currentSuggIdx     = 0;
 
 async function renderRecurringSuggestions(uid) {
   const panel = document.getElementById('recurring-suggestions');
   if (!panel) return;
 
-  const [allTxns, bills] = await Promise.all([
-    getAllTransactions(uid),
-    getBills(uid),
-  ]);
+  const [allTxns, bills] = await Promise.all([getAllTransactions(uid), getBills(uid)]);
+  const all = detectRecurringCharges(allTxns, bills);
 
-  const suggestions = detectRecurringCharges(allTxns, bills)
-    .filter(s => !_dismissedSuggestions.has(s.description));
+  _pendingSuggestions = all.filter(s => !_dismissedDescs.has(s.description));
+  if (_currentSuggIdx >= _pendingSuggestions.length) _currentSuggIdx = 0;
 
-  if (!suggestions.length) {
-    panel.classList.add('hidden');
-    return;
-  }
-
-  panel.classList.remove('hidden');
-  document.getElementById('suggestions-list').innerHTML = suggestions.map(s => suggestionCardHTML(s)).join('');
+  _renderCurrentSuggestion();
 }
 
-function suggestionCardHTML(s) {
+function _renderCurrentSuggestion() {
+  const panel = document.getElementById('recurring-suggestions');
+  if (!panel) return;
+
+  if (!_pendingSuggestions.length) { panel.classList.add('hidden'); return; }
+
+  panel.classList.remove('hidden');
+  const s = _pendingSuggestions[_currentSuggIdx];
+  document.getElementById('suggestion-progress').textContent =
+    `${_currentSuggIdx + 1} of ${_pendingSuggestions.length}`;
+  document.getElementById('suggestion-card-display').innerHTML = _suggestionDetailHTML(s);
+}
+
+function _suggestionDetailHTML(s) {
   const confPct   = Math.round(s.confidence * 100);
-  const confColor = s.confidence >= 0.75 ? 'var(--green)' : s.confidence >= 0.5 ? 'var(--yellow)' : 'var(--text-muted)';
-  const amtText   = s.amount != null ? fmt(s.amount) : 'variable';
-  const freqLabel = s.frequency.charAt(0).toUpperCase() + s.frequency.slice(1);
-  const dueMeta   = s.dueDay ? ` · due ~${esc(s.dueDay)}` : '';
+  const confColor = s.confidence >= 0.75 ? 'var(--green)' : s.confidence >= 0.6 ? 'var(--yellow)' : 'var(--text-muted)';
+  const amtText   = s.amount != null ? fmt(s.amount) : 'Variable amount';
+  const freqLabel = { monthly: 'Monthly', quarterly: 'Quarterly', annual: 'Annual' }[s.frequency] || s.frequency;
 
   return `
-    <div class="suggestion-card" data-desc="${esc(s.description)}">
-      <div class="suggestion-info">
-        <div class="suggestion-name">${esc(s.description)}</div>
-        <div class="suggestion-meta">
-          ${esc(s.category)} · ${freqLabel}${dueMeta} · seen ${s.occurrences}× · last ${esc(s.lastDate)}
-        </div>
+    <div class="suggestion-detail">
+      <div class="suggestion-detail-name">${esc(s.description)}</div>
+      <div class="suggestion-detail-meta">
+        <span class="suggestion-detail-amount">${amtText}</span>
+        <span class="suggestion-detail-freq">${freqLabel}</span>
+        ${s.dueDay    ? `<span class="text-muted">Due ~${esc(s.dueDay)}</span>` : ''}
+        ${s.accountName ? `<span class="account-chip">${esc(s.accountName)}</span>` : ''}
       </div>
-      <div class="suggestion-amount">${amtText}</div>
-      <div class="suggestion-conf" style="color:${confColor}" title="Detection confidence">${confPct}% match</div>
-      <button class="btn btn-primary btn-sm btn-add-suggestion"
-        data-desc="${esc(s.description)}"
-        data-amount="${s.amount != null ? s.amount.toFixed(2) : ''}"
-        data-frequency="${esc(s.frequency)}"
-        data-category="${esc(s.category)}"
-        data-dueday="${esc(s.dueDay || '')}"
-        data-account="${esc(s.accountName || '')}">
-        + Add as Bill
-      </button>
-      <button class="btn-icon btn-dismiss-suggestion" data-desc="${esc(s.description)}" title="Dismiss">✕</button>
+      <div class="suggestion-detail-stats">
+        <span>${s.occurrences} occurrence${s.occurrences !== 1 ? 's' : ''}</span>
+        <span>Last: ${esc(s.lastDate)}</span>
+        <span>${esc(s.category)}</span>
+        <span style="color:${confColor}">${confPct}% confidence</span>
+      </div>
     </div>`;
 }
 
-function openBillModalFromSuggestion(btn) {
-  // Pre-fill bill modal from suggestion data
-  document.getElementById('modal-bill-title').textContent = 'Add Bill';
-  document.getElementById('bill-id').value              = '';
-  document.getElementById('bill-company').value         = btn.dataset.desc;
-  document.getElementById('bill-service').value         = btn.dataset.category || '';
-  document.getElementById('bill-due-day').value         = btn.dataset.dueday || '';
-  document.getElementById('bill-amount').value          = btn.dataset.amount || '';
-  document.getElementById('bill-frequency').value       = btn.dataset.frequency || 'monthly';
-  document.getElementById('bill-autopay').checked       = false;
-  document.getElementById('bill-linked-account').value  = btn.dataset.account || '';
-  document.getElementById('bill-notes').value           = '';
-  document.getElementById('bill-active').checked        = true;
+function dismissCurrentSuggestion() {
+  if (!_pendingSuggestions.length) return;
+  _dismissedDescs.add(_pendingSuggestions.splice(_currentSuggIdx, 1)[0].description);
+  if (_currentSuggIdx >= _pendingSuggestions.length) _currentSuggIdx = 0;
+  _renderCurrentSuggestion();
+}
+
+function skipCurrentSuggestion() {
+  if (_pendingSuggestions.length <= 1) return;
+  _currentSuggIdx = (_currentSuggIdx + 1) % _pendingSuggestions.length;
+  _renderCurrentSuggestion();
+}
+
+function addCurrentSuggestion() {
+  if (!_pendingSuggestions.length) return;
+  const s = _pendingSuggestions[_currentSuggIdx];
+
+  // Remove from pending before opening modal
+  _dismissedDescs.add(_pendingSuggestions.splice(_currentSuggIdx, 1)[0].description);
+  if (_currentSuggIdx >= _pendingSuggestions.length) _currentSuggIdx = 0;
+  _renderCurrentSuggestion();
+
+  // Pre-fill bill modal
+  document.getElementById('modal-bill-title').textContent  = 'Add Bill';
+  document.getElementById('bill-id').value                 = '';
+  document.getElementById('bill-company').value            = s.description;
+  document.getElementById('bill-service').value            = s.category || '';
+  document.getElementById('bill-due-day').value            = s.dueDay || '';
+  document.getElementById('bill-amount').value             = s.amount != null ? s.amount.toFixed(2) : '';
+  document.getElementById('bill-frequency').value          = s.frequency || 'monthly';
+  document.getElementById('bill-autopay').checked          = false;
+  document.getElementById('bill-linked-account').value     = s.accountName || '';
+  document.getElementById('bill-notes').value              = '';
+  document.getElementById('bill-active').checked           = true;
   openModal('modal-bill');
 }
 
-function dismissSuggestion(desc) {
-  _dismissedSuggestions.add(desc);
-  const card = document.querySelector(`.suggestion-card[data-desc="${CSS.escape(desc)}"]`);
-  if (card) card.remove();
-  if (!document.querySelectorAll('.suggestion-card').length) {
-    document.getElementById('recurring-suggestions').classList.add('hidden');
-  }
-}
-
 function dismissAllSuggestions() {
-  document.querySelectorAll('.suggestion-card').forEach(c => _dismissedSuggestions.add(c.dataset.desc));
+  _pendingSuggestions.forEach(s => _dismissedDescs.add(s.description));
+  _pendingSuggestions = [];
+  _currentSuggIdx = 0;
   document.getElementById('recurring-suggestions').classList.add('hidden');
 }
 

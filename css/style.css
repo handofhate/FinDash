@@ -172,17 +172,31 @@ html, body {
   margin-bottom: 12px;
 }
 .suggestions-header h3 { font-size: 14px; font-weight: 600; color: var(--text); }
-.suggestions-list { display: flex; flex-direction: column; gap: 8px; }
-.suggestion-card {
+
+/* Tinder-style card */
+.suggestion-card-display {
   background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 12px 14px;
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border-radius: var(--radius); padding: 20px 22px; margin-bottom: 12px;
+  min-height: 110px;
 }
-.suggestion-info { flex: 1; min-width: 0; }
-.suggestion-name { font-weight: 600; font-size: 13px; }
-.suggestion-meta { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
-.suggestion-amount { font-weight: 700; font-size: 15px; flex-shrink: 0; }
-.suggestion-conf { font-size: 11px; flex-shrink: 0; min-width: 60px; text-align: right; }
+.suggestion-detail-name {
+  font-size: 17px; font-weight: 700; margin-bottom: 10px;
+}
+.suggestion-detail-meta {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.suggestion-detail-amount { font-size: 20px; font-weight: 700; color: var(--red); }
+.suggestion-detail-freq {
+  background: var(--bg-hover); border: 1px solid var(--border);
+  border-radius: 20px; padding: 2px 10px; font-size: 12px; color: var(--text-muted);
+}
+.suggestion-detail-stats {
+  display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted);
+}
+.suggestion-tinder-actions {
+  display: flex; justify-content: center; gap: 10px;
+}
+.suggestion-tinder-actions .btn { min-width: 130px; }
 
 /* ── Empty State ──────────────────────────────────────────────── */
 .empty-state {

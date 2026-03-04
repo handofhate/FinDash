@@ -72,16 +72,24 @@
         </div>
       </div>
 
-      <!-- Recurring bill suggestions (populated after CSV import or manual scan) -->
+      <!-- Recurring bill suggestions (Tinder-style review) -->
       <div id="recurring-suggestions" class="recurring-suggestions hidden">
         <div class="suggestions-header">
           <div>
             <h3>Suggested Recurring Bills</h3>
-            <p class="text-muted" style="font-size:12px;margin-top:2px">Detected from your transaction history. Review and add the ones you want to track.</p>
+            <p class="text-muted" style="font-size:12px;margin-top:2px">Review suggested recurring charges from your transaction history.</p>
           </div>
-          <button id="btn-dismiss-suggestions" class="btn btn-ghost btn-sm">Dismiss All</button>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span id="suggestion-progress" class="text-muted" style="font-size:12px"></span>
+            <button id="btn-dismiss-suggestions" class="btn btn-ghost btn-sm">Dismiss All</button>
+          </div>
         </div>
-        <div id="suggestions-list" class="suggestions-list"></div>
+        <div id="suggestion-card-display" class="suggestion-card-display"></div>
+        <div class="suggestion-tinder-actions">
+          <button id="btn-suggestion-dismiss" class="btn btn-ghost btn-sm">&#10005; Not Recurring</button>
+          <button id="btn-suggestion-skip"    class="btn btn-ghost btn-sm">&#8631; Skip for now</button>
+          <button id="btn-suggestion-add"     class="btn btn-primary btn-sm">&#10003; Add as Bill</button>
+        </div>
       </div>
 
       <div id="bills-list" class="bills-list">

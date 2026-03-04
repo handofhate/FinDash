@@ -108,14 +108,9 @@ document.getElementById('btn-scan-recurring').addEventListener('click', async ()
 });
 
 document.getElementById('btn-dismiss-suggestions').addEventListener('click', dismissAllSuggestions);
-
-// Event delegation for suggestion cards (add / dismiss buttons)
-document.getElementById('recurring-suggestions').addEventListener('click', e => {
-  const addBtn     = e.target.closest('.btn-add-suggestion');
-  const dismissBtn = e.target.closest('.btn-dismiss-suggestion');
-  if (addBtn)     openBillModalFromSuggestion(addBtn);
-  if (dismissBtn) dismissSuggestion(dismissBtn.dataset.desc);
-});
+document.getElementById('btn-suggestion-dismiss').addEventListener('click', dismissCurrentSuggestion);
+document.getElementById('btn-suggestion-skip').addEventListener('click', skipCurrentSuggestion);
+document.getElementById('btn-suggestion-add').addEventListener('click', addCurrentSuggestion);
 
 document.getElementById('bills-month').addEventListener('change', async e => {
   _billsMonth = e.target.value;
