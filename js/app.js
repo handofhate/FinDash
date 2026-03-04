@@ -149,9 +149,19 @@ document.getElementById('tx-month').addEventListener('change', async () => {
   if (uid) await loadAndRenderTxList(uid);
 });
 
+document.getElementById('tx-account').addEventListener('change', async () => {
+  const uid = auth.currentUser?.uid;
+  if (uid) await loadAndRenderTxList(uid);
+});
+
 document.getElementById('tx-category').addEventListener('change', async () => {
   const uid = auth.currentUser?.uid;
   if (uid) await loadAndRenderTxList(uid);
+});
+
+// Show/hide "new account name" field based on account selector value
+document.getElementById('import-account-select').addEventListener('change', e => {
+  document.getElementById('new-account-name-group').classList.toggle('hidden', e.target.value !== 'new');
 });
 
 // ─── Charts events ────────────────────────────────────────────────────────────

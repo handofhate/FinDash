@@ -94,6 +94,10 @@
         <div class="toolbar-left">
           <label for="tx-month">Month:</label>
           <input type="month" id="tx-month" />
+          <label for="tx-account">Account:</label>
+          <select id="tx-account">
+            <option value="">All Accounts</option>
+          </select>
           <label for="tx-category">Category:</label>
           <select id="tx-category">
             <option value="">All Categories</option>
@@ -111,6 +115,25 @@
           <h3>Import Preview</h3>
           <div id="import-stats" class="import-stats"></div>
         </div>
+
+        <!-- Account assignment step -->
+        <div class="import-account-step">
+          <div class="account-detected-row">
+            <span class="text-muted">Detected account #:</span>
+            <code id="import-detected-acct" class="account-code"></code>
+          </div>
+          <div class="form-row" style="margin-top:10px">
+            <div class="form-group">
+              <label for="import-account-select">Assign to account *</label>
+              <select id="import-account-select"></select>
+            </div>
+            <div class="form-group hidden" id="new-account-name-group">
+              <label for="import-account-name">Account nickname *</label>
+              <input type="text" id="import-account-name" placeholder="e.g. Checking, Chase Visa" />
+            </div>
+          </div>
+        </div>
+
         <div id="import-preview-table-wrap" class="table-wrap"></div>
         <div class="import-preview-actions">
           <button id="btn-import-confirm" class="btn btn-primary">Import Transactions</button>

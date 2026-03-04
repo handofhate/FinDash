@@ -21,6 +21,12 @@ function parseTransactionCSV(file) {
   });
 }
 
+function _extractAccountNumber(txId) {
+  // Transaction ID format: "YYYYMMDD ACCTNUM AMOUNT TXREF"
+  const parts = String(txId).trim().split(/\s+/);
+  return parts.length >= 2 ? parts[1] : null;
+}
+
 function mapBankRow(row) {
   // Handles the specific bank CSV format (also tolerates minor header variations)
   const txId = row['Transaction ID'] || row['transaction_id'] || row['TransactionID'];
@@ -78,6 +84,22 @@ async function handleCSVFile(file, uid) {
 
     _pendingImport = newRows;
 
+    // Detect account number from Transaction ID
+    const detectedAcctNum = _extractAccountNumber(rows[0]?.txId || '');
+    document.getElementById('import-detected-acct').textContent = detectedAcctNum || 'Unknown';
+
+    // Populate account selector
+    const accounts = await getAccounts(uid);
+    const acctSel  = document.getElementById('import-account-select');
+    const matchingAcct = accounts.find(a => a.detectedNumber === detectedAcctNum);
+    acctSel.innerHTML =
+      accounts.map(a =>
+        `<option value="${a.id}"${a.id === matchingAcct?.id ? ' selected' : ''}>${esc(a.name)}</option>`
+      ).join('') +
+      `<option value="new"${!matchingAcct ? ' selected' : ''}>+ New account…</option>`;
+    const nameGroup = document.getElementById('new-account-name-group');
+    nameGroup.classList.toggle('hidden', !!matchingAcct);
+
     // Show preview
     const stats = document.getElementById('import-stats');
     const dateRange = _getDateRange(rows);
@@ -95,7 +117,7 @@ async function handleCSVFile(file, uid) {
 
     document.getElementById('import-preview').classList.remove('hidden');
     document.getElementById('btn-import-confirm').disabled = newRows.length === 0;
-    showToast('', 'info'); // clear loading toast
+    showToast('', 'info');
   } catch (err) {
     showToast('Parse error: ' + err.message, 'error');
   }
@@ -103,15 +125,36 @@ async function handleCSVFile(file, uid) {
 
 async function confirmImport(uid) {
   if (!_pendingImport.length) return;
+
+  // Resolve account
+  const acctSel   = document.getElementById('import-account-select');
+  const acctVal   = acctSel.value;
+  let accountId, accountName;
+
+  if (acctVal === 'new') {
+    const name = document.getElementById('import-account-name').value.trim();
+    if (!name) { showToast('Enter an account nickname first', 'error'); return; }
+    const detectedNumber = document.getElementById('import-detected-acct').textContent;
+    accountId   = await saveAccount(uid, { name, detectedNumber });
+    accountName = name;
+  } else if (acctVal) {
+    accountId   = acctVal;
+    accountName = acctSel.options[acctSel.selectedIndex].text;
+  } else {
+    showToast('Select an account to assign these transactions to', 'error'); return;
+  }
+
+  // Stamp every pending row with the account
+  const rowsWithAccount = _pendingImport.map(r => ({ ...r, accountId, accountName }));
+
   document.getElementById('btn-import-confirm').disabled = true;
   showToast('Importing…', 'info');
   try {
-    const { imported, skipped } = await importTransactions(uid, _pendingImport);
+    const { imported, skipped } = await importTransactions(uid, rowsWithAccount);
     _pendingImport = [];
     document.getElementById('import-preview').classList.add('hidden');
-    showToast(`Imported ${imported} transactions (${skipped} skipped)`, 'success');
+    showToast(`Imported ${imported} transactions to "${accountName}" (${skipped} skipped)`, 'success');
     await renderTransactionsTab(uid);
-    // Auto-scan for recurring bills after every import
     await renderRecurringSuggestions(uid);
   } catch (err) {
     showToast('Import failed: ' + err.message, 'error');
@@ -135,14 +178,21 @@ async function renderTransactionsTab(uid) {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  // Populate month dropdown
-  const months = await getTransactionMonths(uid);
+  // Populate filters in parallel
+  const [months, cats, accounts] = await Promise.all([
+    getTransactionMonths(uid),
+    getTransactionCategories(uid),
+    getAccounts(uid),
+  ]);
+
   const monthSel = document.getElementById('tx-month');
   monthSel.innerHTML = '<option value="">All Months</option>' +
     months.map(m => `<option value="${m}"${m === defaultMonth ? ' selected' : ''}>${m}</option>`).join('');
 
-  // Populate category dropdown
-  const cats = await getTransactionCategories(uid);
+  const acctSel = document.getElementById('tx-account');
+  acctSel.innerHTML = '<option value="">All Accounts</option>' +
+    accounts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
+
   const catSel = document.getElementById('tx-category');
   catSel.innerHTML = '<option value="">All Categories</option>' +
     cats.map(c => `<option value="${c}">${esc(c)}</option>`).join('');
@@ -153,8 +203,10 @@ async function renderTransactionsTab(uid) {
 async function loadAndRenderTxList(uid) {
   const yearMonth = document.getElementById('tx-month').value;
   const category  = document.getElementById('tx-category').value;
+  const accountId = document.getElementById('tx-account').value;
 
-  const txns = await getTransactions(uid, { yearMonth, category });
+  let txns = await getTransactions(uid, { yearMonth, category });
+  if (accountId) txns = txns.filter(t => t.accountId === accountId);
   const bills = _billsCache || [];
 
   const listEl = document.getElementById('tx-list');
@@ -228,8 +280,9 @@ function detectRecurringCharges(transactions, existingBills) {
   debits.forEach(t => {
     const key = _normalizeDesc(t.description);
     if (!key) return;
-    if (!groups[key]) groups[key] = { display: t.description, txns: [], category: t.category };
+    if (!groups[key]) groups[key] = { display: t.description, txns: [], category: t.category, accounts: {} };
     groups[key].txns.push(t);
+    if (t.accountName) groups[key].accounts[t.accountName] = (groups[key].accounts[t.accountName] || 0) + 1;
   });
 
   // Build set of already-tracked bill names for deduplication
@@ -237,7 +290,7 @@ function detectRecurringCharges(transactions, existingBills) {
 
   const suggestions = [];
 
-  Object.values(groups).forEach(({ display, txns, category }) => {
+  Object.values(groups).forEach(({ display, txns, category, accounts }) => {
     if (txns.length < 2) return;
 
     const sorted = [...txns].sort((a, b) => _parseTxDate(a.postingDate) - _parseTxDate(b.postingDate));
@@ -273,6 +326,9 @@ function detectRecurringCharges(transactions, existingBills) {
     const alreadyTracked = trackedNames.some(n => n && (normDisplay.includes(n) || n.includes(normDisplay)));
     if (alreadyTracked) return;
 
+    // Most-used account for this merchant
+    const topAccount = Object.entries(accounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
     suggestions.push({
       description: display,
       amount:      amountConsistent ? Math.round(avgAmount * 100) / 100 : null,
@@ -282,6 +338,7 @@ function detectRecurringCharges(transactions, existingBills) {
       lastDate:    sorted[sorted.length - 1].postingDate,
       category,
       dueDay:      _predictDueDay(sorted),
+      accountName: topAccount,
     });
   });
 
@@ -334,7 +391,8 @@ function suggestionCardHTML(s) {
         data-amount="${s.amount != null ? s.amount.toFixed(2) : ''}"
         data-frequency="${esc(s.frequency)}"
         data-category="${esc(s.category)}"
-        data-dueday="${esc(s.dueDay || '')}">
+        data-dueday="${esc(s.dueDay || '')}"
+        data-account="${esc(s.accountName || '')}">
         + Add as Bill
       </button>
       <button class="btn-icon btn-dismiss-suggestion" data-desc="${esc(s.description)}" title="Dismiss">✕</button>
@@ -351,7 +409,7 @@ function openBillModalFromSuggestion(btn) {
   document.getElementById('bill-amount').value          = btn.dataset.amount || '';
   document.getElementById('bill-frequency').value       = btn.dataset.frequency || 'monthly';
   document.getElementById('bill-autopay').checked       = false;
-  document.getElementById('bill-linked-account').value  = '';
+  document.getElementById('bill-linked-account').value  = btn.dataset.account || '';
   document.getElementById('bill-notes').value           = '';
   document.getElementById('bill-active').checked        = true;
   openModal('modal-bill');
@@ -376,13 +434,14 @@ function buildTxTable(txns, bills, compact) {
 
   const rows = txns.map(t => {
     const isRecurring = billNames.some(name => name && t.description.toLowerCase().includes(name));
-    const amtClass = t.type === 'Credit' ? 'tx-amount-credit' : 'tx-amount-debit';
-    const sign     = t.type === 'Credit' ? '+' : '-';
-    const rowClass = isRecurring ? 'tx-recurring' : '';
+    const amtClass   = t.type === 'Credit' ? 'tx-amount-credit' : 'tx-amount-debit';
+    const sign       = t.type === 'Credit' ? '+' : '-';
+    const rowClass   = isRecurring ? 'tx-recurring' : '';
     const recurBadge = isRecurring ? '<span class="badge badge-recurring" title="Matches a known bill">recurring</span>' : '';
-    const typeBadge = t.type === 'Credit'
+    const typeBadge  = t.type === 'Credit'
       ? '<span class="badge badge-credit">Credit</span>'
       : '<span class="badge badge-debit">Debit</span>';
+    const acctCell   = t.accountName ? `<span class="account-chip">${esc(t.accountName)}</span>` : '<span class="text-muted">—</span>';
 
     if (compact) {
       return `<tr class="${rowClass}">
@@ -397,6 +456,7 @@ function buildTxTable(txns, bills, compact) {
       <td>${esc(t.postingDate)}</td>
       <td>${esc(t.description)} ${recurBadge}</td>
       <td>${esc(t.category)}</td>
+      <td>${acctCell}</td>
       <td>${typeBadge}</td>
       <td class="${amtClass}">${sign}${fmt(t.amount)}</td>
       <td class="text-muted">${t.balance !== undefined ? fmt(t.balance) : ''}</td>
@@ -405,7 +465,7 @@ function buildTxTable(txns, bills, compact) {
 
   const headers = compact
     ? ['Date', 'Description', 'Category', 'Amount']
-    : ['Date', 'Description', 'Category', 'Type', 'Amount', 'Balance'];
+    : ['Date', 'Description', 'Category', 'Account', 'Type', 'Amount', 'Balance'];
 
   return `<table>
     <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>

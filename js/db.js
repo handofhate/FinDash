@@ -6,6 +6,28 @@ const db = firebase.firestore();
 const billsCol      = uid => db.collection('users').doc(uid).collection('bills');
 const txCol         = uid => db.collection('users').doc(uid).collection('transactions');
 const paidCol       = (uid, ym) => db.collection('users').doc(uid).collection('monthlyPaid').doc(ym).collection('bills');
+const accountsCol   = uid => db.collection('users').doc(uid).collection('accounts');
+
+// ─── Accounts ─────────────────────────────────────────────────────────────────
+async function getAccounts(uid) {
+  const snap = await accountsCol(uid).get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function saveAccount(uid, account) {
+  const { id, ...data } = account;
+  if (id) {
+    await accountsCol(uid).doc(id).set(data, { merge: true });
+    return id;
+  } else {
+    const ref = await accountsCol(uid).add(data);
+    return ref.id;
+  }
+}
+
+async function deleteAccount(uid, accountId) {
+  await accountsCol(uid).doc(accountId).delete();
+}
 
 // ─── Bills ────────────────────────────────────────────────────────────────────
 async function getBills(uid) {
