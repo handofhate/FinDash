@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finance Dashboard</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ── LOGIN SCREEN ────────────────────────────────────────── -->
+  <div id="login-screen">
+    <div class="login-card">
+      <h1>Finance Dashboard</h1>
+      <p>Sign in with your Google account to access your data.</p>
+      <button id="btn-signin" class="btn btn-primary btn-lg">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:8px"><path d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/><path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/><path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/><path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/></svg>
+        Sign in with Google
+      </button>
+    </div>
+  </div>
+
+  <!-- ── APP SHELL (hidden until signed in) ───────────────────── -->
+  <div id="app" class="hidden">
+
+    <!-- Header -->
+    <header class="app-header">
+      <span class="app-title">Finance Dashboard</span>
+      <div class="header-right">
+        <span id="user-email" class="user-email"></span>
+        <button id="btn-signout" class="btn btn-ghost btn-sm">Sign out</button>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="bills">Bills</button>
+      <button class="tab-btn" data-tab="transactions">Transactions</button>
+      <button class="tab-btn" data-tab="charts">Charts</button>
+    </nav>
+
+    <!-- ── BILLS TAB ───────────────────────────────────────────── -->
+    <section id="tab-bills" class="tab-content active">
+      <div class="section-toolbar">
+        <div class="toolbar-left">
+          <label for="bills-month">Month:</label>
+          <input type="month" id="bills-month" />
+        </div>
+        <div class="toolbar-right">
+          <button id="btn-add-bill" class="btn btn-primary btn-sm">+ Add Bill</button>
+        </div>
+      </div>
+
+      <div id="bills-summary" class="bills-summary hidden">
+        <div class="summary-card">
+          <span class="summary-label">Total Due</span>
+          <span id="summary-total" class="summary-value">$0.00</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">Paid</span>
+          <span id="summary-paid" class="summary-value text-green">$0.00</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">Remaining</span>
+          <span id="summary-remaining" class="summary-value text-red">$0.00</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">Bills Paid</span>
+          <span id="summary-count" class="summary-value">0 / 0</span>
+        </div>
+      </div>
+
+      <div id="bills-list" class="bills-list">
+        <div class="empty-state">No bills yet. Click <strong>+ Add Bill</strong> to get started.</div>
+      </div>
+    </section>
+
+    <!-- ── TRANSACTIONS TAB ────────────────────────────────────── -->
+    <section id="tab-transactions" class="tab-content hidden">
+      <div class="section-toolbar">
+        <div class="toolbar-left">
+          <label for="tx-month">Month:</label>
+          <input type="month" id="tx-month" />
+          <label for="tx-category">Category:</label>
+          <select id="tx-category">
+            <option value="">All Categories</option>
+          </select>
+        </div>
+        <div class="toolbar-right">
+          <button id="btn-import-csv" class="btn btn-primary btn-sm">Import CSV</button>
+          <input type="file" id="csv-file-input" accept=".csv" class="hidden" />
+        </div>
+      </div>
+
+      <!-- Import preview -->
+      <div id="import-preview" class="import-preview hidden">
+        <div class="import-preview-header">
+          <h3>Import Preview</h3>
+          <div id="import-stats" class="import-stats"></div>
+        </div>
+        <div id="import-preview-table-wrap" class="table-wrap"></div>
+        <div class="import-preview-actions">
+          <button id="btn-import-confirm" class="btn btn-primary">Import Transactions</button>
+          <button id="btn-import-cancel" class="btn btn-ghost">Cancel</button>
+        </div>
+      </div>
+
+      <div id="tx-summary" class="tx-summary hidden">
+        <div class="summary-card">
+          <span class="summary-label">Total Spent</span>
+          <span id="tx-total-spent" class="summary-value text-red">$0.00</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">Total Income</span>
+          <span id="tx-total-income" class="summary-value text-green">$0.00</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">Transactions</span>
+          <span id="tx-count" class="summary-value">0</span>
+        </div>
+      </div>
+
+      <div id="tx-list" class="table-wrap">
+        <div class="empty-state">No transactions yet. Import a CSV to get started.</div>
+      </div>
+    </section>
+
+    <!-- ── CHARTS TAB ──────────────────────────────────────────── -->
+    <section id="tab-charts" class="tab-content hidden">
+      <div class="section-toolbar">
+        <div class="toolbar-left">
+          <label for="charts-months">Last</label>
+          <select id="charts-months">
+            <option value="3">3 months</option>
+            <option value="6" selected>6 months</option>
+            <option value="12">12 months</option>
+          </select>
+          <label for="charts-drill-month" id="drill-label" class="hidden">Drill into:</label>
+          <select id="charts-drill-month" class="hidden"></select>
+        </div>
+        <div class="toolbar-right">
+          <button id="btn-refresh-charts" class="btn btn-ghost btn-sm">Refresh</button>
+        </div>
+      </div>
+
+      <div class="charts-grid">
+        <div class="chart-card chart-wide">
+          <h3>Income vs Expenses</h3>
+          <canvas id="chart-income-expense"></canvas>
+        </div>
+        <div class="chart-card chart-wide">
+          <h3>Monthly Spending by Category</h3>
+          <canvas id="chart-category-bar"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3 id="chart-donut-title">Category Breakdown</h3>
+          <canvas id="chart-donut"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Top Merchants</h3>
+          <div id="top-merchants-list" class="merchant-list"></div>
+        </div>
+      </div>
+      <div id="charts-empty" class="empty-state hidden">Import some transactions to see charts.</div>
+    </section>
+
+  </div><!-- /#app -->
+
+  <!-- ── BILL MODAL ──────────────────────────────────────────── -->
+  <div id="modal-bill" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-bill-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-bill-title">Add Bill</h2>
+        <button class="modal-close" data-close="modal-bill">&times;</button>
+      </div>
+      <form id="form-bill" class="modal-body">
+        <input type="hidden" id="bill-id" />
+        <div class="form-row">
+          <div class="form-group">
+            <label for="bill-company">Company *</label>
+            <input type="text" id="bill-company" required placeholder="e.g. Verizon" />
+          </div>
+          <div class="form-group">
+            <label for="bill-service">Service</label>
+            <input type="text" id="bill-service" placeholder="e.g. Phone" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="bill-due-day">Due Day</label>
+            <input type="text" id="bill-due-day" placeholder="e.g. 15th, 20th (Mar, Jun...)" />
+          </div>
+          <div class="form-group">
+            <label for="bill-amount">Amount ($)</label>
+            <input type="number" id="bill-amount" step="0.01" min="0" placeholder="0.00 (leave blank if variable)" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="bill-frequency">Frequency</label>
+            <select id="bill-frequency">
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="annual">Annual</option>
+            </select>
+          </div>
+          <div class="form-group form-group-check">
+            <label>
+              <input type="checkbox" id="bill-autopay" />
+              Autopay enabled
+            </label>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="bill-linked-account">Linked Account</label>
+            <input type="text" id="bill-linked-account" placeholder="e.g. Checking Account" />
+          </div>
+          <div class="form-group">
+            <label for="bill-active">
+              <input type="checkbox" id="bill-active" checked />
+              Active bill
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="bill-notes">Notes</label>
+          <textarea id="bill-notes" rows="2" placeholder="Any notes..."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close="modal-bill">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-bill">Save Bill</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── MARK PAID MODAL ────────────────────────────────────────── -->
+  <div id="modal-paid" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-paid-title">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2 id="modal-paid-title">Mark Paid</h2>
+        <button class="modal-close" data-close="modal-paid">&times;</button>
+      </div>
+      <form id="form-paid" class="modal-body">
+        <input type="hidden" id="paid-bill-id" />
+        <div class="form-group">
+          <label for="paid-amount">Amount Paid ($)</label>
+          <input type="number" id="paid-amount" step="0.01" min="0" />
+        </div>
+        <div class="form-group">
+          <label for="paid-date">Date Paid</label>
+          <input type="date" id="paid-date" />
+        </div>
+        <div class="form-group">
+          <label for="paid-confirmation">Confirmation</label>
+          <input type="text" id="paid-confirmation" placeholder="Yes, received / confirmation #..." />
+        </div>
+        <div class="form-group">
+          <label for="paid-notes">Notes</label>
+          <input type="text" id="paid-notes" placeholder="Optional notes" />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close="modal-paid">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── TOAST ──────────────────────────────────────────────────── -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ── SCRIPTS ────────────────────────────────────────────────── -->
+  <!-- Firebase v10 (modular via CDN compat shim) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <!-- Papa Parse -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+  <script src="js/firebase-config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/bills.js"></script>
+  <script src="js/transactions.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

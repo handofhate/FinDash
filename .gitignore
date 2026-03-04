@@ -1,0 +1,12 @@
+# Never commit personal financial data
+*.csv
+*.xlsx
+*.xls
+*.~lock.*
+
+# Local tool config
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
