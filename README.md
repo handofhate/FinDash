@@ -79,7 +79,7 @@ Open your site, click **Sign in with Google**, and start adding bills.
 ### Bills Tab
 - Click **+ Add Bill** to add a recurring bill
 - Select the month with the month picker
-- Click **Mark Paid** on a bill to record the payment (amount, date, confirmation number)
+- Review your monthly total and what is due soon
 - Quarterly bills (e.g. trash) automatically only show in their due months — just include the months in the "Due Day" field, e.g. `20th (Mar, Jun, Sept, Dec)`
 
 ### Transactions Tab

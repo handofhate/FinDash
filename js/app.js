@@ -115,10 +115,7 @@ document.getElementById('btn-suggestion-add').addEventListener('click', addCurre
 document.getElementById('bills-month').addEventListener('change', async e => {
   _billsMonth = e.target.value;
   const uid = auth.currentUser?.uid;
-  if (uid) {
-    _paidCache = await getMonthlyPaid(uid, _billsMonth);
-    _renderBillsList(uid);
-  }
+  if (uid) _renderBillsList(uid);
 });
 
 document.getElementById('form-bill').addEventListener('submit', async e => {
@@ -127,12 +124,6 @@ document.getElementById('form-bill').addEventListener('submit', async e => {
   if (!uid) return;
   const saved = await saveBillForm(uid);
   if (saved) confirmDismissActiveSuggestion();
-});
-
-document.getElementById('form-paid').addEventListener('submit', async e => {
-  e.preventDefault();
-  const uid = auth.currentUser?.uid;
-  if (uid) await savePaidForm(uid);
 });
 
 // ─── Transaction events ───────────────────────────────────────────────────────

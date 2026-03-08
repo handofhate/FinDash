@@ -131,10 +131,7 @@ html, body {
   transition: border-color 0.15s;
 }
 .bill-card:hover { border-color: var(--text-subtle); }
-.bill-card.paid  { border-left: 3px solid var(--green); }
 .bill-card.overdue { border-left: 3px solid var(--red); }
-
-.bill-status-icon { font-size: 20px; flex-shrink: 0; width: 28px; text-align: center; }
 
 .bill-info { flex: 1; min-width: 0; }
 .bill-name  { font-weight: 600; font-size: 14px; }
@@ -157,10 +154,6 @@ html, body {
 .bill-amount.variable { color: var(--text-muted); font-size: 13px; }
 
 .bill-actions { display: flex; gap: 4px; flex-shrink: 0; }
-
-.paid-details {
-  font-size: 11px; color: var(--green); margin-top: 3px;
-}
 
 /* ── Recurring Suggestions ────────────────────────────────────── */
 .recurring-suggestions {

@@ -5,7 +5,6 @@ const db = firebase.firestore();
 // ─── Path helpers ─────────────────────────────────────────────────────────────
 const billsCol      = uid => db.collection('users').doc(uid).collection('bills');
 const txCol         = uid => db.collection('users').doc(uid).collection('transactions');
-const paidCol       = (uid, ym) => db.collection('users').doc(uid).collection('monthlyPaid').doc(ym).collection('bills');
 const accountsCol   = uid => db.collection('users').doc(uid).collection('accounts');
 
 // ─── Accounts ─────────────────────────────────────────────────────────────────
@@ -48,22 +47,6 @@ async function saveBill(uid, bill) {
 
 async function deleteBill(uid, billId) {
   await billsCol(uid).doc(billId).delete();
-}
-
-// ─── Monthly Paid status ──────────────────────────────────────────────────────
-async function getMonthlyPaid(uid, yearMonth) {
-  const snap = await paidCol(uid, yearMonth).get();
-  const result = {};
-  snap.docs.forEach(d => { result[d.id] = d.data(); });
-  return result;
-}
-
-async function setMonthlyPaid(uid, yearMonth, billId, data) {
-  await paidCol(uid, yearMonth).doc(billId).set(data, { merge: true });
-}
-
-async function clearMonthlyPaid(uid, yearMonth, billId) {
-  await paidCol(uid, yearMonth).doc(billId).delete();
 }
 
 // ─── Transactions ─────────────────────────────────────────────────────────────

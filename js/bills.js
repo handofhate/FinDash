@@ -1,13 +1,27 @@
 // ── Bills Tab ─────────────────────────────────────────────────────────────────
 
 let _billsCache = [];
-let _paidCache  = {};
 let _billsMonth = '';  // YYYY-MM
 
 function billsDueDayNum(bill) {
   // Extract leading number from dueDay string (e.g. "15th" → 15, "20th (Mar...)" → 20)
   const m = String(bill.dueDay || '99').match(/\d+/);
   return m ? parseInt(m[0], 10) : 99;
+}
+
+function _isCurrentBillsMonth() {
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return _billsMonth === currentMonth;
+}
+
+function _isDueSoon(bill, referenceDate = new Date()) {
+  const dueDay = billsDueDayNum(bill);
+  if (!Number.isFinite(dueDay) || dueDay > 31) return false;
+
+  const today = referenceDate.getDate();
+  // "Due soon" means the bill is upcoming within the next week in the selected month.
+  return dueDay >= today && dueDay <= (today + 7);
 }
 
 function billDueThisMonth(bill, yearMonth) {
@@ -44,7 +58,6 @@ async function renderBillsTab(uid) {
   document.getElementById('bills-month').value = _billsMonth;
 
   await loadBills(uid);
-  _paidCache = await getMonthlyPaid(uid, _billsMonth);
   _renderBillsList(uid);
 }
 
@@ -62,29 +75,29 @@ function _renderBillsList(uid) {
 
   document.getElementById('bills-summary').classList.remove('hidden');
 
-  let totalDue = 0, totalPaid = 0, countPaid = 0;
+  const currentMonthView = _isCurrentBillsMonth();
+  let totalDue = 0;
+  let dueSoonAmount = 0;
+  let dueSoonCount = 0;
+  let autopayCount = 0;
+
   activeBills.forEach(b => {
     if (b.amount) totalDue += b.amount;
-    if (_paidCache[b.id]) {
-      totalPaid += (_paidCache[b.id].amount || b.amount || 0);
-      countPaid++;
+    if (b.autopay) autopayCount++;
+    if (currentMonthView && _isDueSoon(b)) {
+      dueSoonCount++;
+      dueSoonAmount += (b.amount || 0);
     }
   });
 
-  document.getElementById('summary-total').textContent     = fmt(totalDue);
-  document.getElementById('summary-paid').textContent      = fmt(totalPaid);
-  document.getElementById('summary-remaining').textContent = fmt(Math.max(0, totalDue - totalPaid));
-  document.getElementById('summary-count').textContent     = `${countPaid} / ${activeBills.length}`;
+  document.getElementById('summary-monthly-total').textContent = fmt(totalDue);
+  document.getElementById('summary-due-soon').textContent = currentMonthView ? fmt(dueSoonAmount) : 'n/a';
+  document.getElementById('summary-upcoming-count').textContent = currentMonthView ? String(dueSoonCount) : 'n/a';
+  document.getElementById('summary-autopay-count').textContent = `${autopayCount} / ${activeBills.length}`;
 
   list.innerHTML = activeBills.map(b => billCardHTML(b)).join('');
 
   // Wire up buttons
-  list.querySelectorAll('.btn-mark-paid').forEach(btn => {
-    btn.addEventListener('click', () => openPaidModal(btn.dataset.id, uid));
-  });
-  list.querySelectorAll('.btn-unmark-paid').forEach(btn => {
-    btn.addEventListener('click', () => unmarkPaid(btn.dataset.id, uid));
-  });
   list.querySelectorAll('.btn-edit-bill').forEach(btn => {
     btn.addEventListener('click', () => openBillModal(btn.dataset.id));
   });
@@ -94,9 +107,6 @@ function _renderBillsList(uid) {
 }
 
 function billCardHTML(bill) {
-  const paid    = _paidCache[bill.id];
-  const isPaid  = !!paid;
-  const amtText = bill.amount ? fmt(bill.amount) : '';
   const amtClass = bill.amount ? '' : 'variable';
   const amtDisplay = bill.amount ? fmt(bill.amount) : '<span class="text-muted">variable</span>';
 
@@ -110,32 +120,24 @@ function billCardHTML(bill) {
     ? '<span class="badge badge-autopay">Autopay</span>'
     : '<span class="badge badge-manual">Manual</span>';
 
-  const statusIcon = isPaid ? '✅' : '⏳';
-  const cardClass  = isPaid ? 'paid' : '';
-
-  const paidDetails = isPaid
-    ? `<div class="paid-details">Paid ${paid.paidDate ? `on ${paid.paidDate}` : ''} ${paid.amount ? '— ' + fmt(paid.amount) : ''} ${paid.confirmation ? '— ' + paid.confirmation : ''}</div>`
+  const dueSoon = _isCurrentBillsMonth() && _isDueSoon(bill);
+  const dueSoonBadge = dueSoon
+    ? '<span class="badge badge-debit">Due Soon</span>'
     : '';
 
-  const markBtn = isPaid
-    ? `<button class="btn btn-ghost btn-sm btn-unmark-paid" data-id="${bill.id}" title="Undo paid">↩ Undo</button>`
-    : `<button class="btn btn-primary btn-sm btn-mark-paid" data-id="${bill.id}">Mark Paid</button>`;
-
   return `
-    <div class="bill-card ${cardClass}" data-id="${bill.id}">
-      <div class="bill-status-icon">${statusIcon}</div>
+    <div class="bill-card" data-id="${bill.id}">
       <div class="bill-info">
         <div class="bill-name">${esc(bill.company)}${bill.service ? ' — ' + esc(bill.service) : ''}</div>
         <div class="bill-meta">Due: ${esc(bill.dueDay || '—')} ${bill.linkedAccount ? '· ' + esc(bill.linkedAccount) : ''} ${bill.notes ? '· ' + esc(bill.notes) : ''}</div>
-        ${paidDetails}
       </div>
       <div class="bill-tags">
         ${autopayBadge}
         ${freqBadge}
+        ${dueSoonBadge}
       </div>
       <div class="bill-amount ${amtClass}">${amtDisplay}</div>
       <div class="bill-actions">
-        ${markBtn}
         <button class="btn-icon btn-edit-bill" data-id="${bill.id}" title="Edit">✏️</button>
         <button class="btn-icon btn-delete-bill" data-id="${bill.id}" title="Delete">🗑️</button>
       </div>
@@ -197,48 +199,5 @@ async function confirmDeleteBill(billId, uid) {
     await renderBillsTab(uid);
   } catch (err) {
     showToast('Error deleting bill: ' + err.message, 'error');
-  }
-}
-
-// ─── Mark Paid Modal ──────────────────────────────────────────────────────────
-function openPaidModal(billId, uid) {
-  const bill = _billsCache.find(b => b.id === billId);
-  document.getElementById('modal-paid-title').textContent = `Mark Paid — ${bill?.company || ''}`;
-  document.getElementById('paid-bill-id').value = billId;
-  document.getElementById('paid-amount').value  = bill?.amount || '';
-  document.getElementById('paid-date').value    = new Date().toISOString().slice(0, 10);
-  document.getElementById('paid-confirmation').value = '';
-  document.getElementById('paid-notes').value   = '';
-  openModal('modal-paid');
-}
-
-async function savePaidForm(uid) {
-  const billId = document.getElementById('paid-bill-id').value;
-  const data   = {
-    paid:         true,
-    paidDate:     document.getElementById('paid-date').value,
-    amount:       parseFloat(document.getElementById('paid-amount').value) || null,
-    confirmation: document.getElementById('paid-confirmation').value.trim(),
-    notes:        document.getElementById('paid-notes').value.trim(),
-  };
-  try {
-    await setMonthlyPaid(auth.currentUser.uid, _billsMonth, billId, data);
-    closeModal('modal-paid');
-    showToast('Marked as paid', 'success');
-    _paidCache[billId] = data;
-    _renderBillsList(uid);
-  } catch (err) {
-    showToast('Error saving: ' + err.message, 'error');
-  }
-}
-
-async function unmarkPaid(billId, uid) {
-  try {
-    await clearMonthlyPaid(uid, _billsMonth, billId);
-    delete _paidCache[billId];
-    showToast('Unmarked as paid', 'info');
-    _renderBillsList(uid);
-  } catch (err) {
-    showToast('Error: ' + err.message, 'error');
   }
 }
