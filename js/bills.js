@@ -25,7 +25,11 @@ function _isDueSoon(bill, referenceDate = new Date()) {
 }
 
 function billDueThisMonth(bill, yearMonth) {
-  const [year, mon] = yearMonth.split('-').map(Number);
+  if (!yearMonth || !String(yearMonth).includes('-')) return true;
+
+  const [, mon] = yearMonth.split('-').map(Number);
+  if (!Number.isFinite(mon) || mon < 1 || mon > 12) return true;
+
   const monthNames  = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
   const monthAbbr   = monthNames[mon - 1];
 
@@ -34,12 +38,16 @@ function billDueThisMonth(bill, yearMonth) {
   if (bill.frequency === 'quarterly') {
     // Look for this month's abbreviation in the dueDay string
     const dueDayLower = (bill.dueDay || '').toLowerCase();
-    return dueDayLower.includes(monthAbbr);
+    // If no month markers are present, fail open so recurring bills do not disappear.
+    const hasMonthMarker = monthNames.some(m => dueDayLower.includes(m));
+    return hasMonthMarker ? dueDayLower.includes(monthAbbr) : true;
   }
 
   if (bill.frequency === 'annual') {
     // Expect dueDay to contain month name, e.g. "January 1st"
     const dueDayLower = (bill.dueDay || '').toLowerCase();
+    const hasMonthMarker = monthNames.some(m => dueDayLower.includes(m));
+    if (!hasMonthMarker) return true;
     return dueDayLower.includes(monthAbbr) || dueDayLower.includes(monthNames[mon - 1]);
   }
 
