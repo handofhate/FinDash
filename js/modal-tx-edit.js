@@ -221,11 +221,35 @@ async function _saveTxEdits(uid, tx, categories, bills) {
 
 // Show conflict warning modal
 function _showConflictWarning(uid, tx, categories, bills, edits, conflicts) {
+  const uniqueConflicts = Array.from(new Map((conflicts || []).map(c => [c.id, c])).values());
+  const incomingEdits = edits.filter(e => e.scope !== 'this_only');
+
+  const fmtEdit = (edit) => {
+    const scopeLabel = edit.scope === 'existing_only'
+      ? 'this + existing'
+      : edit.scope === 'future_only'
+        ? 'this + future'
+        : edit.scope === 'all'
+          ? 'this + existing + future'
+          : 'this only';
+    const matcher = edit.matchOn && edit.matchValue
+      ? ` when ${edit.matchOn} = "${esc(edit.matchValue)}"`
+      : '';
+    return `${edit.field} -> "${esc(edit.newValue)}" (${scopeLabel})${matcher}`;
+  };
+
   const text = document.getElementById('conflict-warning-text');
   text.innerHTML = `
-    <strong>${conflicts.length} existing rule(s) would be overwritten:</strong>
-    <ul style="margin-top:10px;margin-left:20px">
-      ${conflicts.map((c, i) => `<li style="margin:5px 0">Rule ${i + 1}: ${c.edits.map(e => `${e.field}`).join(', ')}</li>`).join('')}
+    <strong>Your new ruleset:</strong>
+    <ul style="margin-top:8px;margin-left:20px">
+      ${incomingEdits.map(e => `<li style="margin:4px 0">${fmtEdit(e)}</li>`).join('')}
+    </ul>
+    <strong style="display:block;margin-top:10px">Conflicting existing ruleset(s):</strong>
+    <ul style="margin-top:8px;margin-left:20px">
+      ${uniqueConflicts.map((c, i) => {
+        const existing = Array.isArray(c.edits) ? c.edits : [];
+        return `<li style="margin:6px 0"><strong>Ruleset ${i + 1}</strong><br>${existing.map(e => fmtEdit(e)).join('<br>')}</li>`;
+      }).join('')}
     </ul>
     <p style="margin-top:10px">How would you like to proceed?</p>
   `;
@@ -247,7 +271,7 @@ function _showConflictWarning(uid, tx, categories, bills, edits, conflicts) {
     const choice = document.querySelector('input[name="conflict-choice"]:checked').value;
     if (choice === 'overwrite') {
       // Delete conflicting rulesets first
-      for (const c of conflicts) {
+      for (const c of uniqueConflicts) {
         await deleteRuleset(uid, c.id);
       }
       closeModal('modal-conflict-warning');
