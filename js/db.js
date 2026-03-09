@@ -249,14 +249,34 @@ async function deleteRuleset(uid, rulesetId) {
 
 // Find all rulesets that could conflict with a given edit
 async function findConflictingRulesets(uid, edits) {
+  const normalize = v => String(v || '').trim().toLowerCase();
+  const scopeTargets = scope => {
+    // "this_only" does not create persisted rules, so it never conflicts here.
+    if (scope === 'existing_only') return { existing: true, future: false };
+    if (scope === 'future_only')   return { existing: false, future: true };
+    if (scope === 'all')           return { existing: true, future: true };
+    return { existing: false, future: false };
+  };
+
+  const hasScopeOverlap = (a, b) => {
+    const sa = scopeTargets(a);
+    const sb = scopeTargets(b);
+    return (sa.existing && sb.existing) || (sa.future && sb.future);
+  };
+
   const rulesets = await getRulesets(uid);
   const conflicts = [];
   rulesets.forEach(rs => {
     if (!rs.edits || !Array.isArray(rs.edits)) return;
     rs.edits.forEach(existing => {
       edits.forEach(incoming => {
-        // Conflict if same field is edited
-        if (existing.field === incoming.field) {
+        // Conflict only when the same target field and same matcher/value overlap in scope.
+        const sameField = normalize(existing.field) === normalize(incoming.field);
+        const sameMatchOn = normalize(existing.matchOn) === normalize(incoming.matchOn);
+        const sameMatchValue = normalize(existing.matchValue) === normalize(incoming.matchValue);
+        const overlappingScope = hasScopeOverlap(existing.scope, incoming.scope);
+
+        if (sameField && sameMatchOn && sameMatchValue && overlappingScope) {
           conflicts.push(rs);
         }
       });
