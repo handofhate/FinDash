@@ -128,9 +128,9 @@ function _renderSettingsContent() {
 function _switchSettingsTab(tab) {
   _settingsTab = tab;
   document.querySelectorAll('.settings-tab-btn').forEach(b =>
-    b.classList.toggle('active', b.dcategories-tab').classList.toggle('hidden', tab !== 'categories');
-  document.getElementById('settings-ataset.tab === tab));
+    b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('settings-display-tab').classList.toggle('hidden', tab !== 'display');
+  document.getElementById('settings-categories-tab').classList.toggle('hidden', tab !== 'categories');
   document.getElementById('settings-filters-tab').classList.toggle('hidden', tab !== 'filters');
 }
 
