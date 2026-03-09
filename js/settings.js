@@ -101,14 +101,20 @@ let _settingsUid       = null;
 
 async function openSettingsModal(uid) {
   _settingsUid = uid;
-  if (uid) {
-    [_settingsFilters, _settingsCategories] = await Promise.all([
-      getImportFilters(uid),
-      getCategoryDefinitions(uid),
-    ]);
-  } else {
-    _settingsFilters   = [];
+  try {
+    if (uid) {
+      [_settingsFilters, _settingsCategories] = await Promise.all([
+        getImportFilters(uid),
+        getCategoryDefinitions(uid),
+      ]);
+    } else {
+      _settingsFilters    = [];
+      _settingsCategories = [];
+    }
+  } catch (err) {
+    _settingsFilters    = [];
     _settingsCategories = [];
+    showToast('Settings data failed to load. Showing defaults.', 'error');
   }
   _renderSettingsContent();
   openModal('modal-settings');

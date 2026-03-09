@@ -142,7 +142,9 @@ const IMPORTANCE_LEVELS = ['Essential', 'Important', 'Optional', 'Low'];
 
 async function getCategoryDefinitions(uid) {
   const snap = await categoriesCol(uid).get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 }
 
 async function saveCategoryDefinition(uid, category) {

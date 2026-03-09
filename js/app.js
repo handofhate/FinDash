@@ -85,9 +85,13 @@ document.getElementById('btn-signin').addEventListener('click', signIn);
 document.getElementById('btn-signout').addEventListener('click', signOut);
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
-document.getElementById('btn-settings').addEventListener('click', () => {
+document.getElementById('btn-settings').addEventListener('click', async () => {
   const uid = auth.currentUser?.uid || null;
-  openSettingsModal(uid);
+  try {
+    await openSettingsModal(uid);
+  } catch (err) {
+    showToast('Unable to open settings: ' + err.message, 'error');
+  }
 });
 
 // Settings tab buttons (inside modal — use event delegation on the modal)
