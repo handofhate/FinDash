@@ -219,19 +219,6 @@ document.getElementById('tx-list').addEventListener('click', async e => {
   }
 });
 
-// Event delegation for inline importance dropdown
-document.getElementById('tx-list').addEventListener('change', async e => {
-  const impSelect  = e.target.closest('.tx-select-importance');
-  const uid        = auth.currentUser?.uid;
-  if (!uid) return;
-
-  if (impSelect) {
-    const txId = impSelect.dataset.id;
-    const value = impSelect.value;
-    await updateTransaction(uid, txId, { importance: value });
-  }
-});
-
 // Click on transaction row to open edit modal
 document.getElementById('tx-list').addEventListener('click', async e => {
   const uid = auth.currentUser?.uid;

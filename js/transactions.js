@@ -668,11 +668,6 @@ function buildTxTable(txns, bills, compact) {
   const s    = getSettings();
   const cols = TX_COLUMNS.filter(c => s[c.key] !== false);
 
-  // Build importance dropdown options
-  const importanceOpts = ['<option value="">—</option>']
-    .concat(IMPORTANCE_LEVELS.map(lvl => `<option value="${lvl}"${lvl === '___SELECTED___' ? ' selected' : ''}>${lvl}</option>`))
-    .join('');
-
   const rows = txns.map(t => {
     const isRecurring = billNames.some(name => name && t.description.toLowerCase().includes(name));
     const amtClass    = t.type === 'Credit' ? 'tx-amount-credit' : 'tx-amount-debit';
@@ -695,13 +690,13 @@ function buildTxTable(txns, bills, compact) {
     const categoryDisplay = currentCategory
       ? `<button type="button" class="tx-category-editable" data-id="${t.id}" data-bank-category="${esc(t.rawCategory || '')}" data-category="${esc(currentCategory)}">${esc(currentCategory)}</button>`
       : `<button type="button" class="tx-category-editable is-empty" data-id="${t.id}" data-bank-category="${esc(t.rawCategory || '')}" data-category="">Set category</button>`;
-    const importanceSelect = `<select class="tx-inline-select tx-select-importance" data-id="${t.id}">${importanceOpts.replace('___SELECTED___', t.importance || '')}</select>`;
+    const importanceDisplay = t.importance ? esc(t.importance) : '<span class="text-muted">—</span>';
 
     const cellMap = {
       col_date:        `<td>${esc(t.postingDate)}</td>`,
       col_description: `<td>${esc(t.description)} ${recurBadge}</td>`,
       col_category:    `<td>${categoryDisplay}</td>`,
-      col_importance:  `<td>${importanceSelect}</td>`,
+      col_importance:  `<td>${importanceDisplay}</td>`,
       col_account:     `<td>${acctCell}</td>`,
       col_type:        `<td>${typeBadge}</td>`,
       col_amount:      `<td class="${amtClass}">${sign}${fmt(t.amount)}</td>`,
