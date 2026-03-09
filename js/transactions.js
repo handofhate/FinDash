@@ -4,6 +4,7 @@ let _pendingImport = [];  // rows waiting for user confirmation
 let _showHidden    = false; // toggle to show/hide hidden transactions
 let _categoryDefs  = [];   // cached category definitions
 let _txSort        = { key: 'col_date', dir: 'desc' }; // default chronological (newest first)
+let _lastRenderedTxns = []; // cache currently rendered transactions for row-click editing
 
 function setTxSort(key, dir) {
   if (key) _txSort.key = key;
@@ -12,6 +13,17 @@ function setTxSort(key, dir) {
 
 function getTxSort() {
   return { ..._txSort };
+}
+
+function getRenderedTransactionById(txId) {
+  return _lastRenderedTxns.find(t => t.id === txId) || null;
+}
+
+function getTxEditContext() {
+  return {
+    categories: _categoryDefs || [],
+    bills: _billsCache || [],
+  };
 }
 
 function _sortTransactions(txns) {
@@ -366,7 +378,10 @@ async function loadAndRenderTxList(uid) {
   const accountId = document.getElementById('tx-account').value;
   const s         = getSettings();
 
-  let txns = await getTransactions(uid, { yearMonth, category });
+  // Query once and filter client-side to avoid composite-index issues and keep behavior consistent.
+  let txns = await getTransactions(uid);
+  if (yearMonth) txns = txns.filter(t => t.yearMonth === yearMonth);
+  if (category) txns = txns.filter(t => t.category === category);
   if (accountId) txns = txns.filter(t => t.accountId === accountId);
   if (s.hideZeroTx) txns = txns.filter(t => t.amount !== 0);
 
@@ -386,6 +401,7 @@ async function loadAndRenderTxList(uid) {
   }
 
   if (!sortedVisibleTxns.length) {
+    _lastRenderedTxns = [];
     listEl.innerHTML = '<div class="empty-state">No transactions found. Import a CSV to get started.</div>';
     document.getElementById('tx-summary').classList.add('hidden');
     return;
@@ -403,6 +419,7 @@ async function loadAndRenderTxList(uid) {
   document.getElementById('tx-count').textContent        = summaryTxns.length;
   document.getElementById('tx-summary').classList.remove('hidden');
 
+  _lastRenderedTxns = sortedVisibleTxns;
   listEl.innerHTML = buildTxTable(sortedVisibleTxns, bills, false);
 }
 

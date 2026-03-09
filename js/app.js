@@ -244,24 +244,11 @@ document.getElementById('tx-list').addEventListener('click', async e => {
   if (!row) return;
 
   const txId = row.dataset.id;
-  
-  // Get all transactions to find the current one
-  const s = getSettings();
-  const month = document.getElementById('tx-month').value;
-  const account = document.getElementById('tx-account').value;
-  const category = document.getElementById('tx-category').value;
-
-  let txs = await getTransactions(uid, { yearMonth: month });
-  if (account) txs = txs.filter(t => t.accountId === account);
-  if (category) txs = txs.filter(t => t.category === category);
-  if (!s.showHidden) txs = txs.filter(t => !t.hidden);
-
-  const tx = txs.find(t => t.id === txId);
+  const tx = getRenderedTransactionById(txId);
   if (!tx) return;
 
-  // Get categories and bills
-  const categories = await getCategoryDefinitions(uid);
-  const bills = await getBills(uid);
+  // Use cached context from transactions tab for snappy row open.
+  const { categories, bills } = getTxEditContext();
 
   // Toggle inline edit dropdown
   await toggleTxEditInline(uid, tx, categories, bills);

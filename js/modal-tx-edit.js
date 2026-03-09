@@ -2,6 +2,16 @@
 
 let _currentTxEdit = null; // Track the transaction being edited
 let _activeEditRow = null; // Track the currently open edit row
+let _allTransactionsCache = { uid: null, data: null }; // reused for impact preview
+
+async function _getAllTransactionsForEdit(uid, { refresh = false } = {}) {
+  if (!refresh && _allTransactionsCache.uid === uid && Array.isArray(_allTransactionsCache.data)) {
+    return _allTransactionsCache.data;
+  }
+  const all = await getAllTransactions(uid);
+  _allTransactionsCache = { uid, data: all };
+  return all;
+}
 
 // Toggle inline edit dropdown for a given transaction
 async function toggleTxEditInline(uid, transaction, categories, bills) {
@@ -21,7 +31,7 @@ async function toggleTxEditInline(uid, transaction, categories, bills) {
   // Close any other open edit rows
   document.querySelectorAll('.tx-edit-row').forEach(row => row.remove());
 
-  const allTransactions = await getAllTransactions(uid);
+  const allTransactions = await _getAllTransactionsForEdit(uid);
   _currentTxEdit = {
     uid,
     tx: transaction,
@@ -438,6 +448,7 @@ async function _applyTxEdits(uid, tx, edits) {
     _activeEditRow?.remove();
     _activeEditRow = null;
     _currentTxEdit = null;
+    _allTransactionsCache = { uid: null, data: null };
     _removeEscapeHandler();
     await loadAndRenderTxList(uid);
     showToast('Changes saved', 'success');
