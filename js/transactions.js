@@ -5,6 +5,7 @@ let _showHidden    = false; // toggle to show/hide hidden transactions
 let _categoryDefs  = [];   // cached category definitions
 let _pendingCategorySuggestions = [];
 let _pendingSubcategorySuggestions = [];
+let _activeEditSuggestionKey = '';
 
 // ─── CSV Parsing ──────────────────────────────────────────────────────────────
 function parseTransactionCSV(file) {
@@ -262,8 +263,9 @@ async function autoAssignCategories(uid, rows) {
       row._recommendationSource = recommendation.source;
       row._suggestedNewCategory = !!recommendation.isNew;
 
-      if (!row.category) row.category = recommendation.category;
-      if (!row.subcategory && recommendation.subcategory) row.subcategory = recommendation.subcategory;
+      // Prefer recommendation category over noisy bank labels for import automation.
+      row.category = recommendation.category;
+      // Subcategory is left as a suggestion until user accepts it.
       if (!row.importance && recommendation.importance) row.importance = recommendation.importance;
       return;
     }
@@ -431,6 +433,38 @@ function _dedupePendingSubcategorySuggestions() {
   }));
 }
 
+function _applyAcceptedCategoryToPendingRows(oldCategoryName, nextCategoryName) {
+  const oldKey = String(oldCategoryName || '').toLowerCase();
+  _pendingImport = _pendingImport.map(r => {
+    const recKey = String(r._categoryRecommendation || '').toLowerCase();
+    if (recKey !== oldKey) return r;
+    return {
+      ...r,
+      category: nextCategoryName,
+      _categoryRecommendation: nextCategoryName,
+      // Keep subcategory as recommendation until explicitly accepted.
+      subcategory: r.subcategory && r._autoAssignedBy ? r.subcategory : '',
+    };
+  });
+}
+
+function _applyAcceptedSubcategoryToPendingRows(categoryName, subcategoryName) {
+  const cKey = String(categoryName || '').toLowerCase();
+  const sKey = String(subcategoryName || '').toLowerCase();
+  _pendingImport = _pendingImport.map(r => {
+    const recCategory = String(r._categoryRecommendation || '').toLowerCase();
+    const recSub = String(r._subcategoryRecommendation || '').toLowerCase();
+    if (recCategory !== cKey || recSub !== sKey) return r;
+    return {
+      ...r,
+      category: categoryName,
+      subcategory: subcategoryName,
+      _categoryRecommendation: categoryName,
+      _subcategoryRecommendation: subcategoryName,
+    };
+  });
+}
+
 function _removeSubcategorySuggestionsForCategory(categoryName) {
   _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.filter(s =>
     String(s.category || '').toLowerCase() !== String(categoryName || '').toLowerCase()
@@ -478,7 +512,11 @@ function _renderImportSuggestionPanels() {
       <div class="import-sugg-header">
         <div>
           <strong>Suggested New Categories</strong>
-          <div class="text-muted" style="font-size:12px">Accept or decline each category suggestion.</div>
+          <div class="text-muted" style="font-size:12px">Accept, edit, merge, or drag one suggestion onto another to merge.</div>
+        </div>
+        <div class="import-sugg-toolbar">
+          <button class="btn btn-primary btn-sm" id="btn-accept-all-category-suggestions">Accept All</button>
+          <button class="btn btn-ghost btn-sm" id="btn-decline-all-category-suggestions">Decline All</button>
         </div>
       </div>
       <div class="import-sugg-list">${list}</div>
@@ -510,6 +548,10 @@ function _renderImportSuggestionPanels() {
           <strong>Suggested New Subcategories</strong>
           <div class="text-muted" style="font-size:12px">Accept or decline each subcategory suggestion.</div>
         </div>
+        <div class="import-sugg-toolbar">
+          <button class="btn btn-primary btn-sm" id="btn-accept-all-subcategory-suggestions">Accept All</button>
+          <button class="btn btn-ghost btn-sm" id="btn-decline-all-subcategory-suggestions">Decline All</button>
+        </div>
       </div>
       <div class="import-sugg-list">${list}</div>
     `;
@@ -534,6 +576,7 @@ async function acceptCategorySuggestion(uid, key) {
     await saveCategoryDefinition(uid, { name: suggestion.name, subcategories: suggestion.subcategories || [] });
   }
 
+  _applyAcceptedCategoryToPendingRows(suggestion.name, suggestion.name);
   _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== key);
   _removeSubcategorySuggestionsForCategory(suggestion.name);
   _categoryDefs = await getCategoryDefinitions(uid);
@@ -541,23 +584,51 @@ async function acceptCategorySuggestion(uid, key) {
   showToast(`Added category "${suggestion.name}"`, 'success');
 }
 
+async function acceptAllCategorySuggestions(uid) {
+  const keys = _pendingCategorySuggestions.map(s => s.key);
+  for (const key of keys) {
+    await acceptCategorySuggestion(uid, key);
+  }
+}
+
 function declineCategorySuggestion(key) {
   _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== key);
   _renderImportSuggestionPanels();
 }
 
-function editCategorySuggestion(key) {
+function declineAllCategorySuggestions() {
+  _pendingCategorySuggestions = [];
+  _renderImportSuggestionPanels();
+}
+
+function openCategorySuggestionEditModal(key) {
+  const suggestion = _pendingCategorySuggestions.find(s => s.key === key);
+  if (!suggestion) return;
+
+  _activeEditSuggestionKey = key;
+  document.getElementById('edit-suggestion-key').value = key;
+  document.getElementById('edit-suggestion-name').value = suggestion.name || '';
+  document.getElementById('edit-suggestion-subcategories').value = (suggestion.subcategories || []).join(', ');
+  document.getElementById('edit-suggestion-apply-now').checked = true;
+  openModal('modal-edit-category-suggestion');
+}
+
+function saveCategorySuggestionEditForm() {
+  const key = document.getElementById('edit-suggestion-key').value || _activeEditSuggestionKey;
   const idx = _pendingCategorySuggestions.findIndex(s => s.key === key);
-  if (idx === -1) return;
+  if (idx === -1) return false;
 
   const current = _pendingCategorySuggestions[idx];
-  const renamed = prompt('Edit suggested category name:', current.name || '');
-  if (renamed === null) return;
+  const nextName = document.getElementById('edit-suggestion-name').value.trim();
+  const subs = document.getElementById('edit-suggestion-subcategories').value
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const applyNow = document.getElementById('edit-suggestion-apply-now').checked;
 
-  const nextName = String(renamed).trim();
   if (!nextName) {
     showToast('Category name cannot be empty', 'error');
-    return;
+    return false;
   }
 
   const oldName = current.name;
@@ -565,12 +636,22 @@ function editCategorySuggestion(key) {
     ...current,
     name: nextName,
     key: nextName.toLowerCase(),
+    subcategories: subs,
   };
 
   _remapSubcategorySuggestionCategory(oldName, nextName);
   _dedupePendingCategorySuggestions();
   _dedupePendingSubcategorySuggestions();
+  if (applyNow) _applyAcceptedCategoryToPendingRows(oldName, nextName);
+
+  closeModal('modal-edit-category-suggestion');
   _renderImportSuggestionPanels();
+  showToast('Category suggestion updated', 'success');
+  return true;
+}
+
+function editCategorySuggestion(key) {
+  openCategorySuggestionEditModal(key);
 }
 
 function mergeCategorySuggestion(sourceKey, targetKeyOverride = null) {
@@ -635,14 +716,27 @@ async function acceptSubcategorySuggestion(uid, key) {
     await saveCategoryDefinition(uid, { name: suggestion.category, subcategories: [suggestion.subcategory] });
   }
 
+  _applyAcceptedSubcategoryToPendingRows(suggestion.category, suggestion.subcategory);
   _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.filter(s => s.key !== key);
   _categoryDefs = await getCategoryDefinitions(uid);
   _renderImportSuggestionPanels();
   showToast(`Added subcategory "${suggestion.subcategory}"`, 'success');
 }
 
+async function acceptAllSubcategorySuggestions(uid) {
+  const keys = _pendingSubcategorySuggestions.map(s => s.key);
+  for (const key of keys) {
+    await acceptSubcategorySuggestion(uid, key);
+  }
+}
+
 function declineSubcategorySuggestion(key) {
   _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.filter(s => s.key !== key);
+  _renderImportSuggestionPanels();
+}
+
+function declineAllSubcategorySuggestions() {
+  _pendingSubcategorySuggestions = [];
   _renderImportSuggestionPanels();
 }
 

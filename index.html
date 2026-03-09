@@ -303,6 +303,37 @@
     </div>
   </div>
 
+  <!-- ── EDIT CATEGORY SUGGESTION MODAL ───────────────────────── -->
+  <div id="modal-edit-category-suggestion" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-edit-category-suggestion-title">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2 id="modal-edit-category-suggestion-title">Edit Category Suggestion</h2>
+        <button class="modal-close" data-close="modal-edit-category-suggestion">&times;</button>
+      </div>
+      <form id="form-edit-category-suggestion" class="modal-body">
+        <input type="hidden" id="edit-suggestion-key" />
+        <div class="form-group">
+          <label for="edit-suggestion-name">Category Name *</label>
+          <input type="text" id="edit-suggestion-name" required />
+        </div>
+        <div class="form-group">
+          <label for="edit-suggestion-subcategories">Suggested Subcategories (comma-separated)</label>
+          <input type="text" id="edit-suggestion-subcategories" placeholder="Optional subcategories" />
+        </div>
+        <div class="form-group form-group-check" style="justify-content:flex-start">
+          <label>
+            <input type="checkbox" id="edit-suggestion-apply-now" checked />
+            Apply this category to matching pending import rows now
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close="modal-edit-category-suggestion">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- ── TOAST ──────────────────────────────────────────────────── -->
   <div id="toast" class="toast hidden"></div>
 

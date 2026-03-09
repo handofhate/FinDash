@@ -151,6 +151,10 @@ document.getElementById('btn-import-confirm').addEventListener('click', async ()
 document.getElementById('btn-import-cancel').addEventListener('click', cancelImport);
 
 document.getElementById('import-preview').addEventListener('click', async e => {
+  const acceptAllCatBtn = e.target.closest('#btn-accept-all-category-suggestions');
+  const declineAllCatBtn = e.target.closest('#btn-decline-all-category-suggestions');
+  const acceptAllSubBtn = e.target.closest('#btn-accept-all-subcategory-suggestions');
+  const declineAllSubBtn = e.target.closest('#btn-decline-all-subcategory-suggestions');
   const acceptCategoryBtn = e.target.closest('.btn-accept-category-suggestion');
   const editCategoryBtn = e.target.closest('.btn-edit-category-suggestion');
   const mergeCategoryBtn = e.target.closest('.btn-merge-category-suggestion');
@@ -160,12 +164,21 @@ document.getElementById('import-preview').addEventListener('click', async e => {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
 
+  if (acceptAllCatBtn) await acceptAllCategorySuggestions(uid);
+  if (declineAllCatBtn) declineAllCategorySuggestions();
+  if (acceptAllSubBtn) await acceptAllSubcategorySuggestions(uid);
+  if (declineAllSubBtn) declineAllSubcategorySuggestions();
   if (acceptCategoryBtn) await acceptCategorySuggestion(uid, acceptCategoryBtn.dataset.key);
   if (editCategoryBtn) editCategorySuggestion(editCategoryBtn.dataset.key);
   if (mergeCategoryBtn) mergeCategorySuggestion(mergeCategoryBtn.dataset.key);
   if (declineCategoryBtn) declineCategorySuggestion(declineCategoryBtn.dataset.key);
   if (acceptSubBtn) await acceptSubcategorySuggestion(uid, acceptSubBtn.dataset.key);
   if (declineSubBtn) declineSubcategorySuggestion(declineSubBtn.dataset.key);
+});
+
+document.getElementById('form-edit-category-suggestion').addEventListener('submit', e => {
+  e.preventDefault();
+  saveCategorySuggestionEditForm();
 });
 
 let _dragCategorySuggestionKey = null;
