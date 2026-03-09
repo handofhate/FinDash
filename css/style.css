@@ -287,6 +287,7 @@ tbody td {
 .import-sugg-actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 

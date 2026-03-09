@@ -152,6 +152,8 @@ document.getElementById('btn-import-cancel').addEventListener('click', cancelImp
 
 document.getElementById('import-preview').addEventListener('click', async e => {
   const acceptCategoryBtn = e.target.closest('.btn-accept-category-suggestion');
+  const editCategoryBtn = e.target.closest('.btn-edit-category-suggestion');
+  const mergeCategoryBtn = e.target.closest('.btn-merge-category-suggestion');
   const declineCategoryBtn = e.target.closest('.btn-decline-category-suggestion');
   const acceptSubBtn = e.target.closest('.btn-accept-subcategory-suggestion');
   const declineSubBtn = e.target.closest('.btn-decline-subcategory-suggestion');
@@ -159,6 +161,8 @@ document.getElementById('import-preview').addEventListener('click', async e => {
   if (!uid) return;
 
   if (acceptCategoryBtn) await acceptCategorySuggestion(uid, acceptCategoryBtn.dataset.key);
+  if (editCategoryBtn) editCategorySuggestion(editCategoryBtn.dataset.key);
+  if (mergeCategoryBtn) mergeCategorySuggestion(mergeCategoryBtn.dataset.key);
   if (declineCategoryBtn) declineCategorySuggestion(declineCategoryBtn.dataset.key);
   if (acceptSubBtn) await acceptSubcategorySuggestion(uid, acceptSubBtn.dataset.key);
   if (declineSubBtn) declineSubcategorySuggestion(declineSubBtn.dataset.key);

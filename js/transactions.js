@@ -357,6 +357,86 @@ function _refreshPendingSuggestions() {
   _pendingSubcategorySuggestions = _collectSubcategorySuggestions(_pendingImport, _categoryDefs);
 }
 
+function _updateSubcategorySuggestionKeys() {
+  _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.map(s => ({
+    ...s,
+    key: `${String(s.category || '').toLowerCase()}::${String(s.subcategory || '').toLowerCase()}`,
+  }));
+}
+
+function _remapSubcategorySuggestionCategory(oldName, newName) {
+  _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.map(s =>
+    String(s.category || '').toLowerCase() === String(oldName || '').toLowerCase()
+      ? { ...s, category: newName }
+      : s
+  );
+  _updateSubcategorySuggestionKeys();
+}
+
+function _dedupePendingCategorySuggestions() {
+  const merged = new Map();
+  _pendingCategorySuggestions.forEach(s => {
+    const key = String(s.name || '').toLowerCase();
+    if (!key) return;
+    if (!merged.has(key)) {
+      merged.set(key, {
+        key,
+        name: s.name,
+        subcategories: new Set(s.subcategories || []),
+        sources: new Set(String(s.source || '').split(',').map(x => x.trim()).filter(Boolean)),
+        count: s.count || 0,
+      });
+      return;
+    }
+    const tgt = merged.get(key);
+    (s.subcategories || []).forEach(sub => tgt.subcategories.add(sub));
+    String(s.source || '').split(',').map(x => x.trim()).filter(Boolean).forEach(src => tgt.sources.add(src));
+    tgt.count += (s.count || 0);
+  });
+
+  _pendingCategorySuggestions = [...merged.values()].map(v => ({
+    key: v.key,
+    name: v.name,
+    subcategories: [...v.subcategories],
+    source: [...v.sources].join(', '),
+    count: v.count,
+  }));
+}
+
+function _dedupePendingSubcategorySuggestions() {
+  const merged = new Map();
+  _pendingSubcategorySuggestions.forEach(s => {
+    const key = `${String(s.category || '').toLowerCase()}::${String(s.subcategory || '').toLowerCase()}`;
+    if (!merged.has(key)) {
+      merged.set(key, {
+        key,
+        category: s.category,
+        subcategory: s.subcategory,
+        sources: new Set(String(s.source || '').split(',').map(x => x.trim()).filter(Boolean)),
+        count: s.count || 0,
+      });
+      return;
+    }
+    const tgt = merged.get(key);
+    String(s.source || '').split(',').map(x => x.trim()).filter(Boolean).forEach(src => tgt.sources.add(src));
+    tgt.count += (s.count || 0);
+  });
+
+  _pendingSubcategorySuggestions = [...merged.values()].map(v => ({
+    key: v.key,
+    category: v.category,
+    subcategory: v.subcategory,
+    source: [...v.sources].join(', '),
+    count: v.count,
+  }));
+}
+
+function _removeSubcategorySuggestionsForCategory(categoryName) {
+  _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.filter(s =>
+    String(s.category || '').toLowerCase() !== String(categoryName || '').toLowerCase()
+  );
+}
+
 function _renderImportSuggestionPanels() {
   const wrap = document.getElementById('import-preview-table-wrap');
   if (!wrap) return;
@@ -387,6 +467,8 @@ function _renderImportSuggestionPanels() {
         </div>
         <div class="import-sugg-actions">
           <button class="btn btn-primary btn-sm btn-accept-category-suggestion" data-key="${esc(s.key)}">Accept</button>
+          <button class="btn btn-ghost btn-sm btn-edit-category-suggestion" data-key="${esc(s.key)}">Edit</button>
+          <button class="btn btn-ghost btn-sm btn-merge-category-suggestion" data-key="${esc(s.key)}">Merge</button>
           <button class="btn btn-ghost btn-sm btn-decline-category-suggestion" data-key="${esc(s.key)}">Decline</button>
         </div>
       </div>
@@ -453,8 +535,8 @@ async function acceptCategorySuggestion(uid, key) {
   }
 
   _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== key);
+  _removeSubcategorySuggestionsForCategory(suggestion.name);
   _categoryDefs = await getCategoryDefinitions(uid);
-  _refreshPendingSuggestions();
   _renderImportSuggestionPanels();
   showToast(`Added category "${suggestion.name}"`, 'success');
 }
@@ -462,6 +544,77 @@ async function acceptCategorySuggestion(uid, key) {
 function declineCategorySuggestion(key) {
   _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== key);
   _renderImportSuggestionPanels();
+}
+
+function editCategorySuggestion(key) {
+  const idx = _pendingCategorySuggestions.findIndex(s => s.key === key);
+  if (idx === -1) return;
+
+  const current = _pendingCategorySuggestions[idx];
+  const renamed = prompt('Edit suggested category name:', current.name || '');
+  if (renamed === null) return;
+
+  const nextName = String(renamed).trim();
+  if (!nextName) {
+    showToast('Category name cannot be empty', 'error');
+    return;
+  }
+
+  const oldName = current.name;
+  _pendingCategorySuggestions[idx] = {
+    ...current,
+    name: nextName,
+    key: nextName.toLowerCase(),
+  };
+
+  _remapSubcategorySuggestionCategory(oldName, nextName);
+  _dedupePendingCategorySuggestions();
+  _dedupePendingSubcategorySuggestions();
+  _renderImportSuggestionPanels();
+}
+
+function mergeCategorySuggestion(key) {
+  const source = _pendingCategorySuggestions.find(s => s.key === key);
+  if (!source) return;
+
+  const others = _pendingCategorySuggestions.filter(s => s.key !== key);
+  if (!others.length) {
+    showToast('No other category suggestion to merge with', 'info');
+    return;
+  }
+
+  const options = others.map(s => s.name).join(', ');
+  const picked = prompt(`Merge "${source.name}" into which suggestion?\nOptions: ${options}`, others[0].name);
+  if (picked === null) return;
+
+  const target = others.find(s => String(s.name).toLowerCase() === String(picked).toLowerCase());
+  if (!target) {
+    showToast('Target suggestion not found. Use one of the listed names.', 'error');
+    return;
+  }
+
+  const targetIdx = _pendingCategorySuggestions.findIndex(s => s.key === target.key);
+  if (targetIdx === -1) return;
+
+  const mergedSubs = [...new Set([...(target.subcategories || []), ...(source.subcategories || [])])];
+  const mergedSources = [...new Set([
+    ...String(target.source || '').split(',').map(x => x.trim()).filter(Boolean),
+    ...String(source.source || '').split(',').map(x => x.trim()).filter(Boolean),
+  ])];
+
+  _pendingCategorySuggestions[targetIdx] = {
+    ..._pendingCategorySuggestions[targetIdx],
+    subcategories: mergedSubs,
+    source: mergedSources.join(', '),
+    count: (target.count || 0) + (source.count || 0),
+  };
+  _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== source.key);
+
+  _remapSubcategorySuggestionCategory(source.name, target.name);
+  _dedupePendingCategorySuggestions();
+  _dedupePendingSubcategorySuggestions();
+  _renderImportSuggestionPanels();
+  showToast(`Merged "${source.name}" into "${target.name}"`, 'success');
 }
 
 async function acceptSubcategorySuggestion(uid, key) {
@@ -480,7 +633,6 @@ async function acceptSubcategorySuggestion(uid, key) {
 
   _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.filter(s => s.key !== key);
   _categoryDefs = await getCategoryDefinitions(uid);
-  _refreshPendingSuggestions();
   _renderImportSuggestionPanels();
   showToast(`Added subcategory "${suggestion.subcategory}"`, 'success');
 }
