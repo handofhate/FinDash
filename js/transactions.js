@@ -344,8 +344,9 @@ function _getDateRange(rows) {
 
 // ─── Render Tab ───────────────────────────────────────────────────────────────
 async function renderTransactionsTab(uid) {
-  const now = new Date();
-  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const prevMonth = document.getElementById('tx-month')?.value || '';
+  const prevAccount = document.getElementById('tx-account')?.value || '';
+  const prevCategory = document.getElementById('tx-category')?.value || '';
 
   // Populate filters in parallel
   const [months, cats, accounts, categoryDefs] = await Promise.all([
@@ -359,15 +360,18 @@ async function renderTransactionsTab(uid) {
 
   const monthSel = document.getElementById('tx-month');
   monthSel.innerHTML = '<option value="">All Months</option>' +
-    months.map(m => `<option value="${m}"${m === defaultMonth ? ' selected' : ''}>${m}</option>`).join('');
+    months.map(m => `<option value="${m}">${m}</option>`).join('');
+  monthSel.value = months.includes(prevMonth) ? prevMonth : '';
 
   const acctSel = document.getElementById('tx-account');
   acctSel.innerHTML = '<option value="">All Accounts</option>' +
     accounts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
+  acctSel.value = accounts.some(a => a.id === prevAccount) ? prevAccount : '';
 
   const catSel = document.getElementById('tx-category');
   catSel.innerHTML = '<option value="">All Categories</option>' +
     cats.map(c => `<option value="${c}">${esc(c)}</option>`).join('');
+  catSel.value = cats.includes(prevCategory) ? prevCategory : '';
 
   await loadAndRenderTxList(uid);
 }
@@ -378,12 +382,21 @@ async function loadAndRenderTxList(uid) {
   const accountId = document.getElementById('tx-account').value;
   const s         = getSettings();
 
-  // Query once and filter client-side to avoid composite-index issues and keep behavior consistent.
-  let txns = await getTransactions(uid);
-  if (yearMonth) txns = txns.filter(t => t.yearMonth === yearMonth);
-  if (category) txns = txns.filter(t => t.category === category);
-  if (accountId) txns = txns.filter(t => t.accountId === accountId);
-  if (s.hideZeroTx) txns = txns.filter(t => t.amount !== 0);
+  let txns = [];
+  try {
+    // Query once and filter client-side to avoid composite-index issues and keep behavior consistent.
+    txns = await getTransactions(uid);
+    if (yearMonth) txns = txns.filter(t => String(t.yearMonth || '').trim() === String(yearMonth).trim());
+    if (category) txns = txns.filter(t => String(t.category || '').trim() === String(category).trim());
+    if (accountId) txns = txns.filter(t => String(t.accountId || '').trim() === String(accountId).trim());
+    if (s.hideZeroTx) txns = txns.filter(t => t.amount !== 0);
+  } catch (err) {
+    showToast('Unable to load transactions: ' + err.message, 'error');
+    document.getElementById('tx-list').innerHTML = '<div class="empty-state">Error loading transactions.</div>';
+    document.getElementById('tx-summary').classList.add('hidden');
+    _lastRenderedTxns = [];
+    return;
+  }
 
   // Split hidden from visible for summary; when _showHidden is true, render all
   const visibleTxns = _showHidden ? txns : txns.filter(t => !t.hidden);

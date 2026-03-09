@@ -31,13 +31,15 @@ async function toggleTxEditInline(uid, transaction, categories, bills) {
   // Close any other open edit rows
   document.querySelectorAll('.tx-edit-row').forEach(row => row.remove());
 
-  const allTransactions = await _getAllTransactionsForEdit(uid);
+  const cachedAll = (_allTransactionsCache.uid === uid && Array.isArray(_allTransactionsCache.data))
+    ? _allTransactionsCache.data
+    : null;
   _currentTxEdit = {
     uid,
     tx: transaction,
     categories,
     bills,
-    allTransactions,
+    allTransactions: cachedAll,
     edits: {}, // { field: { newValue, scope, matchOn } }
   };
 
@@ -52,6 +54,20 @@ async function toggleTxEditInline(uid, transaction, categories, bills) {
 
   // Wire up field change listeners
   _wireTxEditForm(uid, transaction, categories, bills);
+
+  // Warm cache in background; do not block opening the dropdown.
+  if (!cachedAll) {
+    _getAllTransactionsForEdit(uid)
+      .then(all => {
+        if (_currentTxEdit?.tx?.id === transaction.id) {
+          _currentTxEdit.allTransactions = all;
+          _updateRulesetImpact(transaction);
+        }
+      })
+      .catch(() => {
+        // Keep editor usable even if impact preload fails.
+      });
+  }
 
   // Add escape key handler
   _addEscapeHandler();
@@ -299,6 +315,10 @@ function _updateRulesetImpact(tx) {
   }
 
   const allTxs = Array.isArray(_currentTxEdit?.allTransactions) ? _currentTxEdit.allTransactions : [];
+  if (!allTxs.length) {
+    impactEl.textContent = 'Ruleset impact: calculating existing matches...';
+    return;
+  }
   const impacted = new Set();
   existingScopeEdits.forEach(edit => {
     _findMatchingTransactions(allTxs, edit.matchOn, edit.matchValue).forEach(t => {
