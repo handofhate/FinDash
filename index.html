@@ -111,6 +111,21 @@
           <select id="tx-category">
             <option value="">All Categories</option>
           </select>
+          <label for="tx-sort-by">Sort by:</label>
+          <select id="tx-sort-by">
+            <option value="col_date">Date</option>
+            <option value="col_description">Description</option>
+            <option value="col_category">Category</option>
+            <option value="col_importance">Importance</option>
+            <option value="col_account">Account</option>
+            <option value="col_type">Type</option>
+            <option value="col_amount">Amount</option>
+            <option value="col_balance">Balance</option>
+          </select>
+          <select id="tx-sort-direction">
+            <option value="asc">Ascending</option>
+            <option value="desc" selected>Descending</option>
+          </select>
         </div>
         <div class="toolbar-right">
           <button id="btn-show-hidden" class="btn btn-ghost btn-sm">Show Hidden</button>

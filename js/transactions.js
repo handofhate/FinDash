@@ -3,6 +3,53 @@
 let _pendingImport = [];  // rows waiting for user confirmation
 let _showHidden    = false; // toggle to show/hide hidden transactions
 let _categoryDefs  = [];   // cached category definitions
+let _txSort        = { key: 'col_date', dir: 'desc' }; // default chronological (newest first)
+
+function setTxSort(key, dir) {
+  if (key) _txSort.key = key;
+  if (dir === 'asc' || dir === 'desc') _txSort.dir = dir;
+}
+
+function getTxSort() {
+  return { ..._txSort };
+}
+
+function _sortTransactions(txns) {
+  const key = _txSort.key || 'col_date';
+  const dir = _txSort.dir === 'asc' ? 1 : -1;
+
+  const getVal = (t) => {
+    switch (key) {
+      case 'col_date':
+        return _parseTxDate(t.postingDate)?.getTime?.() || 0;
+      case 'col_description':
+        return String(t.description || '').toLowerCase();
+      case 'col_category':
+        return String(t.category || t.rawCategory || '').toLowerCase();
+      case 'col_importance':
+        return String(t.importance || '').toLowerCase();
+      case 'col_account':
+        return String(t.accountName || '').toLowerCase();
+      case 'col_type':
+        return String(t.type || '').toLowerCase();
+      case 'col_amount':
+        return Number(t.amount || 0);
+      case 'col_balance':
+        return Number(t.balance || 0);
+      default:
+        return String(t.postingDate || '');
+    }
+  };
+
+  return [...txns].sort((a, b) => {
+    const av = getVal(a);
+    const bv = getVal(b);
+    if (typeof av === 'number' && typeof bv === 'number') {
+      return (av - bv) * dir;
+    }
+    return String(av).localeCompare(String(bv), undefined, { sensitivity: 'base' }) * dir;
+  });
+}
 
 // ─── CSV Parsing ──────────────────────────────────────────────────────────────
 function parseTransactionCSV(file) {
@@ -309,6 +356,11 @@ async function renderTransactionsTab(uid) {
   catSel.innerHTML = '<option value="">All Categories</option>' +
     cats.map(c => `<option value="${c}">${esc(c)}</option>`).join('');
 
+  const sortBySel = document.getElementById('tx-sort-by');
+  const sortDirSel = document.getElementById('tx-sort-direction');
+  if (sortBySel) sortBySel.value = _txSort.key;
+  if (sortDirSel) sortDirSel.value = _txSort.dir;
+
   await loadAndRenderTxList(uid);
 }
 
@@ -324,6 +376,7 @@ async function loadAndRenderTxList(uid) {
 
   // Split hidden from visible for summary; when _showHidden is true, render all
   const visibleTxns = _showHidden ? txns : txns.filter(t => !t.hidden);
+  const sortedVisibleTxns = _sortTransactions(visibleTxns);
   const bills       = _billsCache || [];
   const listEl      = document.getElementById('tx-list');
 
@@ -336,7 +389,7 @@ async function loadAndRenderTxList(uid) {
       : `Show Hidden${hiddenCount ? ` (${hiddenCount})` : ''}`;
   }
 
-  if (!visibleTxns.length) {
+  if (!sortedVisibleTxns.length) {
     listEl.innerHTML = '<div class="empty-state">No transactions found. Import a CSV to get started.</div>';
     document.getElementById('tx-summary').classList.add('hidden');
     return;
@@ -354,7 +407,7 @@ async function loadAndRenderTxList(uid) {
   document.getElementById('tx-count').textContent        = summaryTxns.length;
   document.getElementById('tx-summary').classList.remove('hidden');
 
-  listEl.innerHTML = buildTxTable(visibleTxns, bills, false);
+  listEl.innerHTML = buildTxTable(sortedVisibleTxns, bills, false);
 }
 
 // ─── Recurring Bill Detection ──────────────────────────────────────────────────
@@ -709,7 +762,14 @@ function buildTxTable(txns, bills, compact) {
     </tr>`;
   }).join('');
 
-  const headers = [...cols.map(c => `<th>${c.label}</th>`), '<th></th>'].join('');
+  const headers = [
+    ...cols.map(c => {
+      const isActive = c.key === _txSort.key;
+      const indicator = isActive ? (_txSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+      return `<th class="tx-sortable-header" data-sort-key="${c.key}">${c.label}${indicator}</th>`;
+    }),
+    '<th></th>'
+  ].join('');
 
   return `<table>
     <thead><tr>${headers}</tr></thead>

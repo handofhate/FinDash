@@ -196,6 +196,20 @@ document.getElementById('tx-category').addEventListener('change', async () => {
   if (uid) await loadAndRenderTxList(uid);
 });
 
+document.getElementById('tx-sort-by').addEventListener('change', async e => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  setTxSort(e.target.value, document.getElementById('tx-sort-direction').value);
+  await loadAndRenderTxList(uid);
+});
+
+document.getElementById('tx-sort-direction').addEventListener('change', async e => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  setTxSort(document.getElementById('tx-sort-by').value, e.target.value);
+  await loadAndRenderTxList(uid);
+});
+
 document.getElementById('btn-show-hidden').addEventListener('click', async () => {
   _showHidden = !_showHidden;
   const uid = auth.currentUser?.uid;
@@ -206,8 +220,20 @@ document.getElementById('btn-show-hidden').addEventListener('click', async () =>
 document.getElementById('tx-list').addEventListener('click', async e => {
   const hideBtn   = e.target.closest('.btn-hide-tx');
   const unhideBtn = e.target.closest('.btn-unhide-tx');
+  const sortHeader = e.target.closest('th.tx-sortable-header');
   const uid       = auth.currentUser?.uid;
   if (!uid) return;
+
+  if (sortHeader) {
+    const key = sortHeader.dataset.sortKey;
+    const current = getTxSort();
+    const nextDir = (current.key === key && current.dir === 'asc') ? 'desc' : 'asc';
+    setTxSort(key, nextDir);
+    document.getElementById('tx-sort-by').value = key;
+    document.getElementById('tx-sort-direction').value = nextDir;
+    await loadAndRenderTxList(uid);
+    return;
+  }
 
   if (hideBtn) {
     await setTransactionHidden(uid, hideBtn.dataset.id, true);
