@@ -251,7 +251,10 @@ function _renderCategoriesSettings(categories) {
 
   return `
     <div class="settings-section">
-      <div class="settings-section-title">Categories</div>
+      <div class="settings-section-head">
+        <div class="settings-section-title" style="margin-bottom:0">Categories</div>
+        <button class="btn btn-danger btn-sm" id="btn-delete-all-categories">Delete All Categories</button>
+      </div>
       <p class="text-muted" style="font-size:12px;margin-bottom:12px">
         Define categories for organizing transactions. Each category can have optional subcategories.
       </p>
@@ -336,6 +339,25 @@ function _wireFilterSettings() {
 }
 
 function _wireCategorySettings() {
+  document.getElementById('btn-delete-all-categories')?.addEventListener('click', async () => {
+    if (!_settingsUid) return;
+    if (!_settingsCategories.length) {
+      showToast('No categories to delete', 'info');
+      return;
+    }
+
+    const confirmed = confirm(
+      `Delete all ${_settingsCategories.length} categories? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    await deleteAllCategoryDefinitions(_settingsUid);
+    _settingsCategories = [];
+    document.getElementById('category-list').innerHTML =
+      '<div class="text-muted" style="font-size:13px;padding:4px 0">No categories defined yet.</div>';
+    showToast('All categories deleted', 'info');
+  });
+
   document.getElementById('category-list')?.addEventListener('click', async e => {
     const deleteBtn = e.target.closest('.btn-delete-category');
     const editBtn   = e.target.closest('.btn-edit-category');

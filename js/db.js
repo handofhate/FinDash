@@ -164,6 +164,11 @@ async function deleteCategoryDefinition(uid, categoryId) {
   await categoriesCol(uid).doc(categoryId).delete();
 }
 
+async function deleteAllCategoryDefinitions(uid) {
+  const snap = await categoriesCol(uid).get();
+  return _batchDelete(snap.docs);
+}
+
 // ─── Import Filters ───────────────────────────────────────────────────────────
 const filtersCol = uid => db.collection('users').doc(uid).collection('importFilters');
 

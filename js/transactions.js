@@ -6,6 +6,13 @@ let _categoryDefs  = [];   // cached category definitions
 let _pendingCategorySuggestions = [];
 let _pendingSubcategorySuggestions = [];
 let _activeEditSuggestionKey = '';
+let _lastImportAiMeta = {
+  mode: 'off',
+  status: 'disabled',
+  assigned: 0,
+  considered: 0,
+  error: '',
+};
 
 // ─── CSV Parsing ──────────────────────────────────────────────────────────────
 function parseTransactionCSV(file) {
@@ -200,6 +207,13 @@ async function autoAssignCategories(uid, rows) {
   const existing = await getAllTransactions(uid);
   const categoryDefs = await getCategoryDefinitions(uid);
   const settings = getSettings();
+  _lastImportAiMeta = {
+    mode: settings.aiLocalMode ? 'local' : 'off',
+    status: settings.aiLocalMode ? 'enabled' : 'disabled',
+    assigned: 0,
+    considered: rows.length,
+    error: '',
+  };
   const patternMap = {};  // normalized description → { category, subcategory, importance, count, avgAmount, tokens }
 
   existing.forEach(tx => {
@@ -225,12 +239,21 @@ async function autoAssignCategories(uid, rows) {
   // Optional local AI pass (Transformers.js) for rows that do not hit history-based matches.
   const aiPredByTxId = new Map();
   if (settings.aiLocalMode && window.LocalAI?.suggestRows) {
+    const before = window.LocalAI?.getStatus?.();
+    if (before?.state === 'loading') _lastImportAiMeta.status = 'loading';
     try {
       const aiPredictions = await window.LocalAI.suggestRows(rows, categoryDefs, { threshold: 0.52, maxRows: 150 });
       aiPredictions.forEach(p => aiPredByTxId.set(p.txId, p));
+      const after = window.LocalAI?.getStatus?.();
+      _lastImportAiMeta.status = after?.state === 'ready' ? 'ready' : 'enabled';
     } catch {
       // Fallback to deterministic logic if AI model is unavailable.
+      _lastImportAiMeta.status = 'fallback';
+      _lastImportAiMeta.error = 'Model unavailable';
     }
+  } else if (settings.aiLocalMode) {
+    _lastImportAiMeta.status = 'unavailable';
+    _lastImportAiMeta.error = 'Local AI module not loaded';
   }
 
   // Apply to new rows
@@ -305,6 +328,40 @@ async function autoAssignCategories(uid, rows) {
       row.importance = _importanceFromCategoryName(row.category);
     }
   });
+
+  _lastImportAiMeta.assigned = rows.filter(r => r._autoAssignedBy === 'local-ai').length;
+}
+
+function _renderImportAiStatus() {
+  const meta = _lastImportAiMeta || {};
+  const mode = meta.mode === 'local' ? 'Local AI' : 'AI';
+  const details = meta.assigned ? ` (${meta.assigned} assigned)` : '';
+
+  if (meta.mode !== 'local') {
+    return `<span class="import-ai-status is-off">${mode}: off</span>`;
+  }
+
+  const labelByStatus = {
+    enabled: 'enabled',
+    loading: 'loading model',
+    ready: 'ready',
+    fallback: 'fallback to rules',
+    unavailable: 'unavailable',
+    disabled: 'off',
+  };
+  const clsByStatus = {
+    enabled: 'is-loading',
+    loading: 'is-loading',
+    ready: 'is-ready',
+    fallback: 'is-fallback',
+    unavailable: 'is-fallback',
+    disabled: 'is-off',
+  };
+
+  const status = labelByStatus[meta.status] || 'enabled';
+  const cls = clsByStatus[meta.status] || 'is-loading';
+  const title = meta.error ? ` title="${esc(meta.error)}"` : '';
+  return `<span class="import-ai-status ${cls}"${title}>${mode}: ${status}${details}</span>`;
 }
 
 function _collectCategorySuggestions(rows, categoryDefs) {
@@ -828,6 +885,7 @@ async function handleCSVFile(file, uid) {
     if (skipped.length)  statsHTML += ` · <span class="text-muted">${skipped.length} auto-skipped by filters</span>`;
     if (flagged.length)  statsHTML += ` · <span style="color:var(--yellow)">${flagged.length} flagged for review</span>`;
     statsHTML += ` · ${dateRange}`;
+    statsHTML += ` · ${_renderImportAiStatus()}`;
     stats.innerHTML = statsHTML;
 
     const wrap = document.getElementById('import-preview-table-wrap');
@@ -1270,13 +1328,19 @@ function buildTxTable(txns, bills, compact) {
       const recoBadge  = t._suggestedNewCategory
         ? '<span class="badge badge-annual" title="Recommended new category">new category</span>'
         : (t._categoryRecommendation ? `<span class="badge badge-autopay" title="Suggested from ${esc(t._recommendationSource || 'rules')}">suggested</span>` : '');
+      const sourceLabel = t._autoAssignedBy
+        ? `<span class="badge badge-manual" title="Auto-assigned by ${esc(t._autoAssignedBy)}">${esc(t._autoAssignedBy)}</span>`
+        : '';
+      const confLabel = Number.isFinite(t._autoAssignedConfidence)
+        ? `<span class="badge badge-quarterly" title="Assignment confidence">${Math.round(t._autoAssignedConfidence * 100)}%</span>`
+        : '';
       const catText = t.category
         ? esc(t.category)
         : (t._categoryRecommendation ? esc(t._categoryRecommendation) : '<span class="text-muted">—</span>');
       return `<tr class="${t._flagged ? 'tx-flagged' : ''}">
         <td>${esc(t.postingDate)}</td>
         <td>${esc(t.description)} ${flagBadge}</td>
-        <td>${catText} ${recoBadge}</td>
+        <td>${catText} ${recoBadge} ${sourceLabel} ${confLabel}</td>
         <td class="${amtClass}">${sign}${fmt(t.amount)}</td>
       </tr>`;
     }).join('');

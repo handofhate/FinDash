@@ -3,20 +3,29 @@
 window.LocalAI = (() => {
   let _classifier = null;
   let _loadingPromise = null;
+  let _state = 'idle';
+  let _lastError = '';
 
   async function _loadClassifier() {
     if (_classifier) return _classifier;
     if (_loadingPromise) return _loadingPromise;
 
     _loadingPromise = (async () => {
+      _state = 'loading';
+      _lastError = '';
       const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
       // DistilBERT NLI is a compromise between quality and model size for browser use.
       _classifier = await pipeline('zero-shot-classification', 'Xenova/distilbert-base-uncased-mnli');
+      _state = 'ready';
       return _classifier;
     })();
 
     try {
       return await _loadingPromise;
+    } catch (err) {
+      _state = 'error';
+      _lastError = err?.message || 'Model failed to load';
+      throw err;
     } finally {
       _loadingPromise = null;
     }
@@ -65,5 +74,6 @@ window.LocalAI = (() => {
 
   return {
     suggestRows,
+    getStatus: () => ({ state: _state, error: _lastError }),
   };
 })();
