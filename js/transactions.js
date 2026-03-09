@@ -3,8 +3,6 @@
 let _pendingImport = [];  // rows waiting for user confirmation
 let _showHidden    = false; // toggle to show/hide hidden transactions
 let _categoryDefs  = [];   // cached category definitions
-let _pendingCategorySuggestions = [];
-let _activeEditSuggestionKey = '';
 
 // ─── CSV Parsing ──────────────────────────────────────────────────────────────
 function parseTransactionCSV(file) {
@@ -139,233 +137,6 @@ async function autoAssignCategories(uid, rows) {
   });
 }
 
-function _collectCategorySuggestions(rows, categoryDefs) {
-  const existingNames = new Set((categoryDefs || []).map(c => String(c.name || '').toLowerCase()));
-  const suggestions = new Map();
-
-  function addSuggestion(name) {
-    const cleaned = String(name || '').trim();
-    if (!cleaned) return;
-    const key = cleaned.toLowerCase();
-    if (existingNames.has(key)) return;
-
-    if (!suggestions.has(key)) {
-      suggestions.set(key, { key, name: cleaned, count: 0 });
-    }
-    suggestions.get(key).count += 1;
-  }
-
-  rows.forEach(r => {
-    // Suggest bank categories that haven't been accepted yet
-    const bankCat = _parseBankCategory(r.rawCategory || r.category);
-    if (bankCat) addSuggestion(bankCat);
-  });
-
-  return [...suggestions.values()];
-}
-
-function _refreshPendingSuggestions() {
-  _pendingCategorySuggestions = _collectCategorySuggestions(_pendingImport, _categoryDefs);
-}
-
-function _dedupePendingCategorySuggestions() {
-  const merged = new Map();
-  _pendingCategorySuggestions.forEach(s => {
-    const key = String(s.name || '').toLowerCase();
-    if (!key) return;
-    if (!merged.has(key)) {
-      merged.set(key, { key, name: s.name, count: s.count || 0 });
-      return;
-    }
-    merged.get(key).count += (s.count || 0);
-  });
-
-  _pendingCategorySuggestions = [...merged.values()];
-}
-
-function _applyAcceptedCategoryToPendingRows(oldCategoryName, nextCategoryName) {
-  const oldKey = String(oldCategoryName || '').toLowerCase();
-  _pendingImport = _pendingImport.map(r => {
-    const catKey = String(r.category || '').toLowerCase();
-    if (catKey !== oldKey) return r;
-    return { ...r, category: nextCategoryName };
-  });
-}
-
-function _renderImportSuggestionPanels() {
-  const wrap = document.getElementById('import-preview-table-wrap');
-  if (!wrap) return;
-
-  let catPanel = document.getElementById('import-category-suggestions');
-  if (!catPanel) {
-    catPanel = document.createElement('div');
-    catPanel.id = 'import-category-suggestions';
-    catPanel.className = 'import-suggestions-box hidden';
-    wrap.parentNode.insertBefore(catPanel, wrap);
-  }
-
-  if (_pendingCategorySuggestions.length) {
-    const list = _pendingCategorySuggestions.map(s => `
-      <div class="import-sugg-row" data-kind="category-suggestion" data-key="${esc(s.key)}" draggable="true" title="Drag onto another category suggestion to merge">
-        <div>
-          <strong>${esc(s.name)}</strong>
-          <div class="text-muted" style="font-size:11px">${s.count} transaction(s)</div>
-        </div>
-        <div class="import-sugg-actions">
-          <button class="btn btn-primary btn-sm btn-accept-category-suggestion" data-key="${esc(s.key)}">Accept</button>
-          <button class="btn btn-ghost btn-sm btn-edit-category-suggestion" data-key="${esc(s.key)}">Rename</button>
-          <button class="btn btn-ghost btn-sm btn-merge-category-suggestion" data-key="${esc(s.key)}">Merge</button>
-          <button class="btn btn-ghost btn-sm btn-decline-category-suggestion" data-key="${esc(s.key)}">Decline</button>
-        </div>
-      </div>
-    `).join('');
-
-    catPanel.innerHTML = `
-      <div class="import-sugg-header">
-        <div>
-          <strong>Bank Categories</strong>
-          <div class="text-muted" style="font-size:12px">Accept as-is, rename, merge similar ones, or decline. Changes are remembered for future imports.</div>
-        </div>
-        <div class="import-sugg-toolbar">
-          <button class="btn btn-primary btn-sm" id="btn-accept-all-category-suggestions">Accept All</button>
-          <button class="btn btn-ghost btn-sm" id="btn-decline-all-category-suggestions">Decline All</button>
-        </div>
-      </div>
-      <div class="import-sugg-list">${list}</div>
-    `;
-    catPanel.classList.remove('hidden');
-  } else {
-    catPanel.classList.add('hidden');
-    catPanel.innerHTML = '';
-  }
-}
-
-async function acceptCategorySuggestion(uid, key) {
-  const suggestion = _pendingCategorySuggestions.find(s => s.key === key);
-  if (!suggestion) return;
-  const existing = await getCategoryDefinitions(uid);
-  const byName = new Map(existing.map(c => [String(c.name || '').toLowerCase(), c]));
-
-  const found = byName.get(suggestion.name.toLowerCase());
-  if (found) {
-    await saveCategoryDefinition(uid, { id: found.id, name: found.name });
-  } else {
-    await saveCategoryDefinition(uid, { name: suggestion.name });
-  }
-
-  _applyAcceptedCategoryToPendingRows(suggestion.name, suggestion.name);
-  _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== key);
-  _categoryDefs = await getCategoryDefinitions(uid);
-  _renderImportSuggestionPanels();
-  showToast(`Added category "${suggestion.name}"`, 'success');
-}
-
-async function acceptAllCategorySuggestions(uid) {
-  const keys = _pendingCategorySuggestions.map(s => s.key);
-  for (const key of keys) {
-    await acceptCategorySuggestion(uid, key);
-  }
-}
-
-function declineCategorySuggestion(key) {
-  _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== key);
-  _renderImportSuggestionPanels();
-}
-
-function declineAllCategorySuggestions() {
-  _pendingCategorySuggestions = [];
-  _renderImportSuggestionPanels();
-}
-
-function openCategorySuggestionEditModal(key) {
-  const suggestion = _pendingCategorySuggestions.find(s => s.key === key);
-  if (!suggestion) return;
-
-  _activeEditSuggestionKey = key;
-  document.getElementById('edit-suggestion-key').value = key;
-  document.getElementById('edit-suggestion-name').value = suggestion.name || '';
-  document.getElementById('edit-suggestion-apply-now').checked = true;
-  openModal('modal-edit-category-suggestion');
-}
-
-function saveCategorySuggestionEditForm() {
-  const key = document.getElementById('edit-suggestion-key').value || _activeEditSuggestionKey;
-  const idx = _pendingCategorySuggestions.findIndex(s => s.key === key);
-  if (idx === -1) return false;
-
-  const current = _pendingCategorySuggestions[idx];
-  const nextName = document.getElementById('edit-suggestion-name').value.trim();
-  const applyNow = document.getElementById('edit-suggestion-apply-now').checked;
-
-  if (!nextName) {
-    showToast('Category name cannot be empty', 'error');
-    return false;
-  }
-
-  const oldName = current.name;
-  _pendingCategorySuggestions[idx] = {
-    ...current,
-    name: nextName,
-    key: nextName.toLowerCase(),
-  };
-
-  _dedupePendingCategorySuggestions();
-  if (applyNow) _applyAcceptedCategoryToPendingRows(oldName, nextName);
-
-  closeModal('modal-edit-category-suggestion');
-  _renderImportSuggestionPanels();
-  showToast('Category suggestion updated', 'success');
-  return true;
-}
-
-function editCategorySuggestion(key) {
-  openCategorySuggestionEditModal(key);
-}
-
-function mergeCategorySuggestion(sourceKey, targetKeyOverride = null) {
-  const source = _pendingCategorySuggestions.find(s => s.key === sourceKey);
-  if (!source) return;
-
-  const others = _pendingCategorySuggestions.filter(s => s.key !== sourceKey);
-  if (!others.length) {
-    showToast('No other category suggestion to merge with', 'info');
-    return;
-  }
-
-  const target = targetKeyOverride
-    ? others.find(s => s.key === targetKeyOverride)
-    : (() => {
-        const options = others.map(s => s.name).join(', ');
-        const picked = prompt(`Merge "${source.name}" into which suggestion?\nOptions: ${options}`, others[0].name);
-        if (picked === null) return null;
-        return others.find(s => String(s.name).toLowerCase() === String(picked).toLowerCase());
-      })();
-
-  if (!target) {
-    showToast('Target suggestion not found. Use one of the listed names.', 'error');
-    return;
-  }
-
-  const targetIdx = _pendingCategorySuggestions.findIndex(s => s.key === target.key);
-  if (targetIdx === -1) return;
-
-  const mergedSources = [...new Set([
-    ...String(target.source || '').split(',').map(x => x.trim()).filter(Boolean),
-    ...String(source.source || '').split(',').map(x => x.trim()).filter(Boolean),
-  ])];
-
-  _pendingCategorySuggestions[targetIdx] = {
-    ..._pendingCategorySuggestions[targetIdx],
-    source: mergedSources.join(', '),
-    count: (target.count || 0) + (source.count || 0),
-  };
-  _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== source.key);
-
-  _dedupePendingCategorySuggestions();
-  _renderImportSuggestionPanels();
-  showToast(`Merged "${source.name}" into "${target.name}"`, 'success');
-}
-
 // ─── Import Flow ──────────────────────────────────────────────────────────────
 async function handleCSVFile(file, uid) {
   showToast('Parsing CSV…', 'info');
@@ -385,7 +156,6 @@ async function handleCSVFile(file, uid) {
     const filters = await getImportFilters(uid);
     const { kept, skipped, flagged } = applyImportFilters(newRows, filters);
     _pendingImport = kept;
-    _refreshPendingSuggestions();
 
     // Detect account number from Transaction ID
     const detectedAcctNum = _extractAccountNumber(rows[0]?.txId || '');
@@ -416,7 +186,6 @@ async function handleCSVFile(file, uid) {
     stats.innerHTML = statsHTML;
 
     const wrap = document.getElementById('import-preview-table-wrap');
-    _renderImportSuggestionPanels();
     wrap.innerHTML = buildTxTable(kept.slice(0, 20), [], true);
     if (kept.length > 20) {
       wrap.innerHTML += `<div class="text-muted" style="padding:8px 12px">…and ${kept.length - 20} more</div>`;
@@ -459,8 +228,6 @@ async function confirmImport(uid) {
   try {
     const { imported, skipped } = await importTransactions(uid, rowsWithAccount);
     _pendingImport = [];
-    _pendingCategorySuggestions = [];
-    _renderImportSuggestionPanels();
     document.getElementById('import-preview').classList.add('hidden');
     showToast(`Imported ${imported} transactions to "${accountName}" (${skipped} skipped)`, 'success');
     await renderTransactionsTab(uid);
@@ -473,8 +240,6 @@ async function confirmImport(uid) {
 
 function cancelImport() {
   _pendingImport = [];
-  _pendingCategorySuggestions = [];
-  _renderImportSuggestionPanels();
   document.getElementById('import-preview').classList.add('hidden');
 }
 

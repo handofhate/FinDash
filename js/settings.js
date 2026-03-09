@@ -252,7 +252,7 @@ function _renderCategoriesSettings(categories) {
           </div>
         </div>`;
       }).join('')
-    : '<div class="text-muted" style="font-size:13px;padding:4px 0">No bank category remappings yet. Import transactions to see bank categories.</div>';
+    : '<div class="text-muted" style="font-size:13px;padding:4px 0">No bank category remappings yet. Add one above.</div>';
 
   return `
     <div class="settings-section">
@@ -261,7 +261,7 @@ function _renderCategoriesSettings(categories) {
         <button class="btn btn-danger btn-sm" id="btn-delete-all-categories">Delete All Categories</button>
       </div>
       <p class="text-muted" style="font-size:12px;margin-bottom:12px">
-        Add custom categories or accept suggestions during import.
+        Add custom categories for manual assignment and future learned matching.
       </p>
       <div id="category-list">${rows}</div>
     </div>
@@ -280,6 +280,17 @@ function _renderCategoriesSettings(categories) {
       <p class="text-muted" style="font-size:12px;margin-bottom:12px">
         Rename bank-provided categories to your preferred names. Changes are remembered for future imports.
       </p>
+      <input type="hidden" id="mapping-original-bank-cat" />
+      <div class="form-group" style="margin-bottom:8px">
+        <label for="mapping-bank-cat">Bank Category *</label>
+        <input type="text" id="mapping-bank-cat" placeholder="e.g. Merchandise" />
+      </div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label for="mapping-custom-cat">Rename To *</label>
+        <input type="text" id="mapping-custom-cat" placeholder="e.g. Shopping" />
+      </div>
+      <button class="btn btn-primary btn-sm" id="btn-save-mapping">Save Mapping</button>
+      <button class="btn btn-ghost btn-sm" id="btn-cancel-mapping">Cancel</button>
       <div id="mapping-list">${mappingRows}</div>
     </div>
     <div class="settings-section">
@@ -435,20 +446,62 @@ function _wireCategorySettings() {
 
   // Wire up bank category mapping deletion
   document.getElementById('mapping-list')?.addEventListener('click', async e => {
+    const row = e.target.closest('.category-row[data-bank-cat]');
+    const bankCat = row?.dataset.bankCat;
     const deleteBtn = e.target.closest('.btn-delete-mapping');
-    if (!deleteBtn || !_settingsUid) return;
+    if (!_settingsUid || !bankCat) return;
 
-    const bankCat = deleteBtn.dataset.bankCat;
+    // Click row to edit mapping quickly.
+    if (!deleteBtn) {
+      document.getElementById('mapping-original-bank-cat').value = bankCat;
+      document.getElementById('mapping-bank-cat').value = bankCat;
+      document.getElementById('mapping-custom-cat').value = _settingsMappings[bankCat] || '';
+      return;
+    }
+
     if (!confirm(`Delete mapping for bank category "${bankCat}"?`)) return;
 
     await deleteCategoryMapping(_settingsUid, bankCat);
     delete _settingsMappings[bankCat];
-    deleteBtn.closest('.category-row').remove();
+    row.remove();
 
     if (!Object.keys(_settingsMappings).length) {
       document.getElementById('mapping-list').innerHTML =
-        '<div class="text-muted" style="font-size:13px;padding:4px 0">No bank category remappings yet. Import transactions to see bank categories.</div>';
+        '<div class="text-muted" style="font-size:13px;padding:4px 0">No bank category remappings yet. Add one above or import transactions first.</div>';
     }
     showToast('Bank category mapping deleted', 'info');
+  });
+
+  document.getElementById('btn-save-mapping')?.addEventListener('click', async () => {
+    if (!_settingsUid) return;
+    const original = document.getElementById('mapping-original-bank-cat').value.trim();
+    const bankCat = document.getElementById('mapping-bank-cat').value.trim();
+    const mapped = document.getElementById('mapping-custom-cat').value.trim();
+
+    if (!bankCat || !mapped) {
+      showToast('Both bank category and mapped category are required', 'error');
+      return;
+    }
+
+    if (original && original !== bankCat) {
+      await deleteCategoryMapping(_settingsUid, original);
+      delete _settingsMappings[original];
+    }
+
+    await saveCategoryMapping(_settingsUid, bankCat, mapped);
+    _settingsMappings[bankCat] = mapped;
+
+    document.getElementById('mapping-original-bank-cat').value = '';
+    document.getElementById('mapping-bank-cat').value = '';
+    document.getElementById('mapping-custom-cat').value = '';
+
+    _renderSettingsContent();
+    showToast('Bank category mapping saved', 'success');
+  });
+
+  document.getElementById('btn-cancel-mapping')?.addEventListener('click', () => {
+    document.getElementById('mapping-original-bank-cat').value = '';
+    document.getElementById('mapping-bank-cat').value = '';
+    document.getElementById('mapping-custom-cat').value = '';
   });
 }
