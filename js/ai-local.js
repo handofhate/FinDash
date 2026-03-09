@@ -57,11 +57,9 @@ window.LocalAI = (() => {
         const score = Array.isArray(out?.scores) ? Number(out.scores[0]) : 0;
         if (!label || score < threshold) continue;
 
-        const def = categoryDefs.find(c => String(c.name || '').toLowerCase() === String(label).toLowerCase());
         results.push({
           txId: row.txId,
           category: label,
-          subcategory: (def?.subcategories || [])[0] || '',
           score,
         });
       } catch {

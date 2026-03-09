@@ -4,7 +4,6 @@ let _pendingImport = [];  // rows waiting for user confirmation
 let _showHidden    = false; // toggle to show/hide hidden transactions
 let _categoryDefs  = [];   // cached category definitions
 let _pendingCategorySuggestions = [];
-let _pendingSubcategorySuggestions = [];
 let _activeEditSuggestionKey = '';
 let _lastImportAiMeta = {
   mode: 'off',
@@ -90,15 +89,15 @@ const _DESC_STOPWORDS = new Set([
 ]);
 
 const _KEYWORD_RULES = [
-  { words: ['grocery', 'grocer', 'market', 'supermarket', 'aldi', 'kroger', 'publix', 'walmart'], category: 'Food & Dining', subcategory: 'Groceries', importance: 'Essential' },
-  { words: ['restaurant', 'cafe', 'coffee', 'starbucks', 'mcdonald', 'chipotle', 'doordash', 'uber eats'], category: 'Food & Dining', subcategory: 'Restaurants', importance: 'Optional' },
-  { words: ['uber', 'lyft', 'shell', 'chevron', 'exxon', 'fuel', 'gas', 'parking', 'toll'], category: 'Transportation', subcategory: 'Fuel & Transit', importance: 'Important' },
-  { words: ['netflix', 'spotify', 'hulu', 'disney', 'max', 'youtube'], category: 'Entertainment', subcategory: 'Streaming', importance: 'Optional' },
-  { words: ['rent', 'mortgage', 'hoa'], category: 'Housing', subcategory: 'Rent & Mortgage', importance: 'Essential' },
-  { words: ['electric', 'water', 'sewer', 'utility', 'internet', 'xfinity', 'comcast', 'att', 'verizon', 'tmobile'], category: 'Utilities', subcategory: 'Bills', importance: 'Essential' },
-  { words: ['insurance', 'geico', 'progressive', 'allstate'], category: 'Insurance', subcategory: 'Premiums', importance: 'Essential' },
-  { words: ['pharmacy', 'walgreens', 'cvs', 'hospital', 'clinic', 'medical', 'dental'], category: 'Health', subcategory: 'Medical', importance: 'Essential' },
-  { words: ['amazon', 'target', 'bestbuy', 'store'], category: 'Shopping', subcategory: 'General', importance: 'Optional' },
+  { words: ['grocery', 'grocer', 'market', 'supermarket', 'aldi', 'kroger', 'publix', 'walmart'], category: 'Food & Dining', importance: 'Essential' },
+  { words: ['restaurant', 'cafe', 'coffee', 'starbucks', 'mcdonald', 'chipotle', 'doordash', 'uber eats'], category: 'Food & Dining', importance: 'Optional' },
+  { words: ['uber', 'lyft', 'shell', 'chevron', 'exxon', 'fuel', 'gas', 'parking', 'toll'], category: 'Transportation', importance: 'Important' },
+  { words: ['netflix', 'spotify', 'hulu', 'disney', 'max', 'youtube'], category: 'Entertainment', importance: 'Optional' },
+  { words: ['rent', 'mortgage', 'hoa'], category: 'Housing', importance: 'Essential' },
+  { words: ['electric', 'water', 'sewer', 'utility', 'internet', 'xfinity', 'comcast', 'att', 'verizon', 'tmobile'], category: 'Utilities', importance: 'Essential' },
+  { words: ['insurance', 'geico', 'progressive', 'allstate'], category: 'Insurance', importance: 'Essential' },
+  { words: ['pharmacy', 'walgreens', 'cvs', 'hospital', 'clinic', 'medical', 'dental'], category: 'Health', importance: 'Essential' },
+  { words: ['amazon', 'target', 'bestbuy', 'store'], category: 'Shopping', importance: 'Optional' },
 ];
 
 function _tokenizeDesc(str) {
@@ -135,37 +134,26 @@ function _importanceFromCategoryName(category) {
 
 function _parseBankCategory(raw) {
   const txt = String(raw || '').trim();
-  if (!txt) return { category: '', subcategory: '' };
+  if (!txt) return '';
   const parts = txt.split(/[>/:-]/).map(s => s.trim()).filter(Boolean);
-  return {
-    category: parts[0] || txt,
-    subcategory: parts[1] || '',
-  };
+  return parts[0] || txt;
 }
 
 function _deriveRecommendation(tokens, categoryDefs, bankCategory) {
-  // 1) Match against user-defined categories/subcategories
+  // 1) Match against user-defined categories
   let best = null;
   (categoryDefs || []).forEach(def => {
     const catTokens = _tokenizeDesc(def.name || '');
     const catScore  = _jaccardSimilarity(tokens, catTokens);
     if (!best || catScore > best.score) {
-      best = { score: catScore, category: def.name, subcategory: '', source: 'defined-category', isNew: false };
+      best = { score: catScore, category: def.name, source: 'defined-category', isNew: false };
     }
-    (def.subcategories || []).forEach(sub => {
-      const subTokens = _tokenizeDesc(sub);
-      const subScore  = _jaccardSimilarity(tokens, subTokens);
-      if (!best || subScore > best.score) {
-        best = { score: subScore, category: def.name, subcategory: sub, source: 'defined-subcategory', isNew: false };
-      }
-    });
   });
   // Require stronger semantic overlap before auto-mapping to an existing category.
   // Lower thresholds were collapsing too many distinct categories into one bucket.
   if (best && best.score >= 0.58) {
     return {
       category: best.category,
-      subcategory: best.subcategory,
       importance: _importanceFromCategoryName(best.category),
       source: best.source,
       isNew: false,
@@ -178,7 +166,6 @@ function _deriveRecommendation(tokens, categoryDefs, bankCategory) {
       const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === rule.category.toLowerCase());
       return {
         category: rule.category,
-        subcategory: rule.subcategory,
         importance: rule.importance,
         source: 'keyword',
         isNew: !exists,
@@ -187,13 +174,12 @@ function _deriveRecommendation(tokens, categoryDefs, bankCategory) {
   }
 
   // 3) Fall back to bank-provided category if available
-  const parsed = _parseBankCategory(bankCategory);
-  if (parsed.category) {
-    const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === parsed.category.toLowerCase());
+  const parsedCategory = _parseBankCategory(bankCategory);
+  if (parsedCategory) {
+    const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === parsedCategory.toLowerCase());
     return {
-      category: parsed.category,
-      subcategory: parsed.subcategory,
-      importance: _importanceFromCategoryName(parsed.category),
+      category: parsedCategory,
+      importance: _importanceFromCategoryName(parsedCategory),
       source: 'bank-category',
       isNew: !exists,
     };
@@ -214,7 +200,7 @@ async function autoAssignCategories(uid, rows) {
     considered: rows.length,
     error: '',
   };
-  const patternMap = {};  // normalized description → { category, subcategory, importance, count, avgAmount, tokens }
+  const patternMap = {};  // normalized description → { category, importance, count, avgAmount, tokens }
 
   existing.forEach(tx => {
     if (!tx.category) return;
@@ -223,7 +209,6 @@ async function autoAssignCategories(uid, rows) {
     if (!patternMap[key]) {
       patternMap[key] = {
         category: tx.category,
-        subcategory: tx.subcategory || '',
         importance: tx.importance || '',
         count: 0,
         avgAmount: 0,
@@ -265,7 +250,6 @@ async function autoAssignCategories(uid, rows) {
     // 1) Exact learned match from prior transactions
     if (key && patternMap[key] && patternMap[key].count >= 1) {
       row.category    = patternMap[key].category;
-      row.subcategory = patternMap[key].subcategory;
       row.importance  = patternMap[key].importance || _importanceFromCategoryName(patternMap[key].category);
       row._autoAssignedBy = 'exact-history';
       row._autoAssignedConfidence = 0.98;
@@ -285,7 +269,6 @@ async function autoAssignCategories(uid, rows) {
 
     if (best && best.score >= 0.62) {
       row.category    = best.pattern.category;
-      row.subcategory = best.pattern.subcategory;
       row.importance  = best.pattern.importance || _importanceFromCategoryName(best.pattern.category);
       row._autoAssignedBy = 'fuzzy-history';
       row._autoAssignedConfidence = Math.round(best.score * 100) / 100;
@@ -297,7 +280,6 @@ async function autoAssignCategories(uid, rows) {
     if (ai?.category) {
       row.category = ai.category;
       row._categoryRecommendation = ai.category;
-      if (ai.subcategory) row._subcategoryRecommendation = ai.subcategory;
       row._importanceRecommendation = _importanceFromCategoryName(ai.category);
       row._recommendationSource = 'local-ai';
       row._suggestedNewCategory = !(categoryDefs || []).some(c => String(c.name || '').toLowerCase() === String(ai.category).toLowerCase());
@@ -311,14 +293,12 @@ async function autoAssignCategories(uid, rows) {
     const recommendation = _deriveRecommendation(tokens, categoryDefs, row.category);
     if (recommendation) {
       row._categoryRecommendation = recommendation.category;
-      row._subcategoryRecommendation = recommendation.subcategory || '';
       row._importanceRecommendation = recommendation.importance || '';
       row._recommendationSource = recommendation.source;
       row._suggestedNewCategory = !!recommendation.isNew;
 
       // Prefer recommendation category over noisy bank labels for import automation.
       row.category = recommendation.category;
-      // Subcategory is left as a suggestion until user accepts it.
       if (!row.importance && recommendation.importance) row.importance = recommendation.importance;
       return;
     }
@@ -335,7 +315,8 @@ async function autoAssignCategories(uid, rows) {
 function _renderImportAiStatus() {
   const meta = _lastImportAiMeta || {};
   const mode = meta.mode === 'local' ? 'Local AI' : 'AI';
-  const details = meta.assigned ? ` (${meta.assigned} assigned)` : '';
+  const assigned = Number.isFinite(meta.assigned) ? meta.assigned : 0;
+  const details = meta.mode === 'local' ? ` (${assigned} assigned)` : '';
 
   if (meta.mode !== 'local') {
     return `<span class="import-ai-status is-off">${mode}: off</span>`;
@@ -368,7 +349,7 @@ function _collectCategorySuggestions(rows, categoryDefs) {
   const existingNames = new Set((categoryDefs || []).map(c => String(c.name || '').toLowerCase()));
   const suggestions = new Map();
 
-  function addSuggestion(name, sub, source) {
+  function addSuggestion(name, source) {
     const cleaned = String(name || '').trim();
     if (!cleaned) return;
     const key = cleaned.toLowerCase();
@@ -378,75 +359,31 @@ function _collectCategorySuggestions(rows, categoryDefs) {
       suggestions.set(key, {
         key,
         name: cleaned,
-        subcategories: new Set(),
         sources: new Set(),
         count: 0,
       });
     }
 
     const item = suggestions.get(key);
-    const subClean = String(sub || '').trim();
-    if (subClean) item.subcategories.add(subClean);
     if (source) item.sources.add(String(source));
     item.count += 1;
   }
 
   rows.forEach(r => {
-    addSuggestion(r._categoryRecommendation, r._subcategoryRecommendation, r._recommendationSource || 'rules');
+    addSuggestion(r._categoryRecommendation, r._recommendationSource || 'rules');
 
     // Also suggest unseen bank labels when they differ from the mapped category.
     const raw = String(r.rawCategory || '').trim();
     const mapped = String(r._categoryRecommendation || r.category || '').trim();
     if (raw && raw.toLowerCase() !== mapped.toLowerCase()) {
       const parsed = _parseBankCategory(raw);
-      addSuggestion(parsed.category || raw, parsed.subcategory || '', 'bank-raw');
+      addSuggestion(parsed || raw, 'bank-raw');
     }
   });
 
   return [...suggestions.values()].map(s => ({
     key: s.key,
     name: s.name,
-    subcategories: [...s.subcategories],
-    source: [...s.sources].join(', '),
-    count: s.count,
-  }));
-}
-
-function _collectSubcategorySuggestions(rows, categoryDefs) {
-  const byCategory = new Map((categoryDefs || []).map(c => [String(c.name || '').toLowerCase(), c]));
-  const suggestions = new Map();
-
-  rows.forEach(r => {
-    const category = String(r._categoryRecommendation || '').trim();
-    const subcategory = String(r._subcategoryRecommendation || '').trim();
-    if (!category || !subcategory) return;
-
-    const catDef = byCategory.get(category.toLowerCase());
-    if (!catDef) return;
-
-    const exists = (catDef.subcategories || []).some(s => String(s).toLowerCase() === subcategory.toLowerCase());
-    if (exists) return;
-
-    const key = `${category.toLowerCase()}::${subcategory.toLowerCase()}`;
-    if (!suggestions.has(key)) {
-      suggestions.set(key, {
-        key,
-        category,
-        subcategory,
-        sources: new Set(),
-        count: 0,
-      });
-    }
-
-    const item = suggestions.get(key);
-    item.sources.add(String(r._recommendationSource || 'rules'));
-    item.count += 1;
-  });
-
-  return [...suggestions.values()].map(s => ({
-    key: s.key,
-    category: s.category,
-    subcategory: s.subcategory,
     source: [...s.sources].join(', '),
     count: s.count,
   }));
@@ -454,23 +391,6 @@ function _collectSubcategorySuggestions(rows, categoryDefs) {
 
 function _refreshPendingSuggestions() {
   _pendingCategorySuggestions = _collectCategorySuggestions(_pendingImport, _categoryDefs);
-  _pendingSubcategorySuggestions = _collectSubcategorySuggestions(_pendingImport, _categoryDefs);
-}
-
-function _updateSubcategorySuggestionKeys() {
-  _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.map(s => ({
-    ...s,
-    key: `${String(s.category || '').toLowerCase()}::${String(s.subcategory || '').toLowerCase()}`,
-  }));
-}
-
-function _remapSubcategorySuggestionCategory(oldName, newName) {
-  _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.map(s =>
-    String(s.category || '').toLowerCase() === String(oldName || '').toLowerCase()
-      ? { ...s, category: newName }
-      : s
-  );
-  _updateSubcategorySuggestionKeys();
 }
 
 function _dedupePendingCategorySuggestions() {
@@ -482,14 +402,12 @@ function _dedupePendingCategorySuggestions() {
       merged.set(key, {
         key,
         name: s.name,
-        subcategories: new Set(s.subcategories || []),
         sources: new Set(String(s.source || '').split(',').map(x => x.trim()).filter(Boolean)),
         count: s.count || 0,
       });
       return;
     }
     const tgt = merged.get(key);
-    (s.subcategories || []).forEach(sub => tgt.subcategories.add(sub));
     String(s.source || '').split(',').map(x => x.trim()).filter(Boolean).forEach(src => tgt.sources.add(src));
     tgt.count += (s.count || 0);
   });
@@ -497,35 +415,6 @@ function _dedupePendingCategorySuggestions() {
   _pendingCategorySuggestions = [...merged.values()].map(v => ({
     key: v.key,
     name: v.name,
-    subcategories: [...v.subcategories],
-    source: [...v.sources].join(', '),
-    count: v.count,
-  }));
-}
-
-function _dedupePendingSubcategorySuggestions() {
-  const merged = new Map();
-  _pendingSubcategorySuggestions.forEach(s => {
-    const key = `${String(s.category || '').toLowerCase()}::${String(s.subcategory || '').toLowerCase()}`;
-    if (!merged.has(key)) {
-      merged.set(key, {
-        key,
-        category: s.category,
-        subcategory: s.subcategory,
-        sources: new Set(String(s.source || '').split(',').map(x => x.trim()).filter(Boolean)),
-        count: s.count || 0,
-      });
-      return;
-    }
-    const tgt = merged.get(key);
-    String(s.source || '').split(',').map(x => x.trim()).filter(Boolean).forEach(src => tgt.sources.add(src));
-    tgt.count += (s.count || 0);
-  });
-
-  _pendingSubcategorySuggestions = [...merged.values()].map(v => ({
-    key: v.key,
-    category: v.category,
-    subcategory: v.subcategory,
     source: [...v.sources].join(', '),
     count: v.count,
   }));
@@ -540,33 +429,8 @@ function _applyAcceptedCategoryToPendingRows(oldCategoryName, nextCategoryName) 
       ...r,
       category: nextCategoryName,
       _categoryRecommendation: nextCategoryName,
-      // Keep subcategory as recommendation until explicitly accepted.
-      subcategory: r.subcategory && r._autoAssignedBy ? r.subcategory : '',
     };
   });
-}
-
-function _applyAcceptedSubcategoryToPendingRows(categoryName, subcategoryName) {
-  const cKey = String(categoryName || '').toLowerCase();
-  const sKey = String(subcategoryName || '').toLowerCase();
-  _pendingImport = _pendingImport.map(r => {
-    const recCategory = String(r._categoryRecommendation || '').toLowerCase();
-    const recSub = String(r._subcategoryRecommendation || '').toLowerCase();
-    if (recCategory !== cKey || recSub !== sKey) return r;
-    return {
-      ...r,
-      category: categoryName,
-      subcategory: subcategoryName,
-      _categoryRecommendation: categoryName,
-      _subcategoryRecommendation: subcategoryName,
-    };
-  });
-}
-
-function _removeSubcategorySuggestionsForCategory(categoryName) {
-  _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.filter(s =>
-    String(s.category || '').toLowerCase() !== String(categoryName || '').toLowerCase()
-  );
 }
 
 function _hasLocalAiSource(source) {
@@ -594,20 +458,11 @@ function _renderImportSuggestionPanels() {
     wrap.parentNode.insertBefore(catPanel, wrap);
   }
 
-  let subPanel = document.getElementById('import-subcategory-suggestions');
-  if (!subPanel) {
-    subPanel = document.createElement('div');
-    subPanel.id = 'import-subcategory-suggestions';
-    subPanel.className = 'import-suggestions-box hidden';
-    wrap.parentNode.insertBefore(subPanel, wrap);
-  }
-
   if (_pendingCategorySuggestions.length) {
     const list = _pendingCategorySuggestions.map(s => `
       <div class="import-sugg-row" data-kind="category-suggestion" data-key="${esc(s.key)}" draggable="true" title="Drag onto another category suggestion to merge">
         <div>
           <strong>${esc(s.name)}</strong> ${_hasLocalAiSource(s.source) ? '<span class="badge badge-ai" title="Suggested by Local AI">AI</span>' : ''}
-          ${s.subcategories.length ? `<span class="text-muted"> · ${esc(s.subcategories.join(', '))}</span>` : ''}
           <div class="text-muted" style="font-size:11px">${s.count} transaction(s), source: ${_sourcePillsHtml(s.source)}</div>
         </div>
         <div class="import-sugg-actions">
@@ -637,40 +492,6 @@ function _renderImportSuggestionPanels() {
     catPanel.classList.add('hidden');
     catPanel.innerHTML = '';
   }
-
-  if (_pendingSubcategorySuggestions.length) {
-    const list = _pendingSubcategorySuggestions.map(s => `
-      <div class="import-sugg-row" data-key="${esc(s.key)}">
-        <div>
-          <strong>${esc(s.category)}</strong> ${_hasLocalAiSource(s.source) ? '<span class="badge badge-ai" title="Suggested by Local AI">AI</span>' : ''}
-          <span class="text-muted"> → ${esc(s.subcategory)}</span>
-          <div class="text-muted" style="font-size:11px">${s.count} transaction(s), source: ${_sourcePillsHtml(s.source)}</div>
-        </div>
-        <div class="import-sugg-actions">
-          <button class="btn btn-primary btn-sm btn-accept-subcategory-suggestion" data-key="${esc(s.key)}">Accept</button>
-          <button class="btn btn-ghost btn-sm btn-decline-subcategory-suggestion" data-key="${esc(s.key)}">Decline</button>
-        </div>
-      </div>
-    `).join('');
-
-    subPanel.innerHTML = `
-      <div class="import-sugg-header">
-        <div>
-          <strong>Suggested New Subcategories</strong>
-          <div class="text-muted" style="font-size:12px">Accept or decline each subcategory suggestion.</div>
-        </div>
-        <div class="import-sugg-toolbar">
-          <button class="btn btn-primary btn-sm" id="btn-accept-all-subcategory-suggestions">Accept All</button>
-          <button class="btn btn-ghost btn-sm" id="btn-decline-all-subcategory-suggestions">Decline All</button>
-        </div>
-      </div>
-      <div class="import-sugg-list">${list}</div>
-    `;
-    subPanel.classList.remove('hidden');
-  } else {
-    subPanel.classList.add('hidden');
-    subPanel.innerHTML = '';
-  }
 }
 
 async function acceptCategorySuggestion(uid, key) {
@@ -681,15 +502,13 @@ async function acceptCategorySuggestion(uid, key) {
 
   const found = byName.get(suggestion.name.toLowerCase());
   if (found) {
-    const merged = [...new Set([...(found.subcategories || []), ...(suggestion.subcategories || [])])];
-    await saveCategoryDefinition(uid, { id: found.id, name: found.name, subcategories: merged });
+    await saveCategoryDefinition(uid, { id: found.id, name: found.name });
   } else {
-    await saveCategoryDefinition(uid, { name: suggestion.name, subcategories: suggestion.subcategories || [] });
+    await saveCategoryDefinition(uid, { name: suggestion.name });
   }
 
   _applyAcceptedCategoryToPendingRows(suggestion.name, suggestion.name);
   _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== key);
-  _removeSubcategorySuggestionsForCategory(suggestion.name);
   _categoryDefs = await getCategoryDefinitions(uid);
   _renderImportSuggestionPanels();
   showToast(`Added category "${suggestion.name}"`, 'success');
@@ -719,7 +538,6 @@ function openCategorySuggestionEditModal(key) {
   _activeEditSuggestionKey = key;
   document.getElementById('edit-suggestion-key').value = key;
   document.getElementById('edit-suggestion-name').value = suggestion.name || '';
-  document.getElementById('edit-suggestion-subcategories').value = (suggestion.subcategories || []).join(', ');
   document.getElementById('edit-suggestion-apply-now').checked = true;
   openModal('modal-edit-category-suggestion');
 }
@@ -731,10 +549,6 @@ function saveCategorySuggestionEditForm() {
 
   const current = _pendingCategorySuggestions[idx];
   const nextName = document.getElementById('edit-suggestion-name').value.trim();
-  const subs = document.getElementById('edit-suggestion-subcategories').value
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
   const applyNow = document.getElementById('edit-suggestion-apply-now').checked;
 
   if (!nextName) {
@@ -747,12 +561,9 @@ function saveCategorySuggestionEditForm() {
     ...current,
     name: nextName,
     key: nextName.toLowerCase(),
-    subcategories: subs,
   };
 
-  _remapSubcategorySuggestionCategory(oldName, nextName);
   _dedupePendingCategorySuggestions();
-  _dedupePendingSubcategorySuggestions();
   if (applyNow) _applyAcceptedCategoryToPendingRows(oldName, nextName);
 
   closeModal('modal-edit-category-suggestion');
@@ -792,7 +603,6 @@ function mergeCategorySuggestion(sourceKey, targetKeyOverride = null) {
   const targetIdx = _pendingCategorySuggestions.findIndex(s => s.key === target.key);
   if (targetIdx === -1) return;
 
-  const mergedSubs = [...new Set([...(target.subcategories || []), ...(source.subcategories || [])])];
   const mergedSources = [...new Set([
     ...String(target.source || '').split(',').map(x => x.trim()).filter(Boolean),
     ...String(source.source || '').split(',').map(x => x.trim()).filter(Boolean),
@@ -800,55 +610,14 @@ function mergeCategorySuggestion(sourceKey, targetKeyOverride = null) {
 
   _pendingCategorySuggestions[targetIdx] = {
     ..._pendingCategorySuggestions[targetIdx],
-    subcategories: mergedSubs,
     source: mergedSources.join(', '),
     count: (target.count || 0) + (source.count || 0),
   };
   _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== source.key);
 
-  _remapSubcategorySuggestionCategory(source.name, target.name);
   _dedupePendingCategorySuggestions();
-  _dedupePendingSubcategorySuggestions();
   _renderImportSuggestionPanels();
   showToast(`Merged "${source.name}" into "${target.name}"`, 'success');
-}
-
-async function acceptSubcategorySuggestion(uid, key) {
-  const suggestion = _pendingSubcategorySuggestions.find(s => s.key === key);
-  if (!suggestion) return;
-
-  const defs = await getCategoryDefinitions(uid);
-  const cat = defs.find(c => String(c.name || '').toLowerCase() === suggestion.category.toLowerCase());
-
-  if (cat) {
-    const merged = [...new Set([...(cat.subcategories || []), suggestion.subcategory])];
-    await saveCategoryDefinition(uid, { id: cat.id, name: cat.name, subcategories: merged });
-  } else {
-    await saveCategoryDefinition(uid, { name: suggestion.category, subcategories: [suggestion.subcategory] });
-  }
-
-  _applyAcceptedSubcategoryToPendingRows(suggestion.category, suggestion.subcategory);
-  _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.filter(s => s.key !== key);
-  _categoryDefs = await getCategoryDefinitions(uid);
-  _renderImportSuggestionPanels();
-  showToast(`Added subcategory "${suggestion.subcategory}"`, 'success');
-}
-
-async function acceptAllSubcategorySuggestions(uid) {
-  const keys = _pendingSubcategorySuggestions.map(s => s.key);
-  for (const key of keys) {
-    await acceptSubcategorySuggestion(uid, key);
-  }
-}
-
-function declineSubcategorySuggestion(key) {
-  _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.filter(s => s.key !== key);
-  _renderImportSuggestionPanels();
-}
-
-function declineAllSubcategorySuggestions() {
-  _pendingSubcategorySuggestions = [];
-  _renderImportSuggestionPanels();
 }
 
 // ─── Import Flow ──────────────────────────────────────────────────────────────
@@ -946,7 +715,6 @@ async function confirmImport(uid) {
     const { imported, skipped } = await importTransactions(uid, rowsWithAccount);
     _pendingImport = [];
     _pendingCategorySuggestions = [];
-    _pendingSubcategorySuggestions = [];
     _renderImportSuggestionPanels();
     document.getElementById('import-preview').classList.add('hidden');
     showToast(`Imported ${imported} transactions to "${accountName}" (${skipped} skipped)`, 'success');
@@ -961,7 +729,6 @@ async function confirmImport(uid) {
 function cancelImport() {
   _pendingImport = [];
   _pendingCategorySuggestions = [];
-  _pendingSubcategorySuggestions = [];
   _renderImportSuggestionPanels();
   document.getElementById('import-preview').classList.add('hidden');
 }
@@ -1370,7 +1137,7 @@ function buildTxTable(txns, bills, compact) {
   const s    = getSettings();
   const cols = TX_COLUMNS.filter(c => s[c.key] !== false);
 
-  // Build category/subcategory/importance dropdown options
+  // Build category/importance dropdown options
   const categoryOpts = ['<option value="">—</option>']
     .concat(_categoryDefs.map(c => `<option value="${esc(c.name)}"${c.name === '___SELECTED___' ? ' selected' : ''}>${esc(c.name)}</option>`))
     .concat(['<option value="__other__">+ Other...</option>'])
@@ -1398,24 +1165,15 @@ function buildTxTable(txns, bills, compact) {
       ? `<button class="btn btn-ghost btn-sm btn-unhide-tx" data-id="${t.id}">Unhide</button>`
       : `<button class="btn-icon btn-hide-tx" data-id="${t.id}" title="Hide this transaction">&#128065;</button>`;
 
-    // Build subcategory dropdown options based on selected category
     const selectedCat     = t.category || '';
-    const selectedCatDef  = _categoryDefs.find(c => c.name === selectedCat);
-    const subcatOpts      = ['<option value="">—</option>']
-      .concat((selectedCatDef?.subcategories || []).map(sub => 
-        `<option value="${esc(sub)}"${sub === t.subcategory ? ' selected' : ''}>${esc(sub)}</option>`))
-      .concat(['<option value="__other__">+ Other...</option>'])
-      .join('');
 
     const categorySelect = `<select class="tx-inline-select tx-select-category" data-id="${t.id}">${categoryOpts.replace('___SELECTED___', selectedCat)}</select>`;
-    const subcatSelect   = `<select class="tx-inline-select tx-select-subcategory" data-id="${t.id}" ${!selectedCat ? 'disabled' : ''}>${subcatOpts}</select>`;
     const importanceSelect = `<select class="tx-inline-select tx-select-importance" data-id="${t.id}">${importanceOpts.replace('___SELECTED___', t.importance || '')}</select>`;
 
     const cellMap = {
       col_date:        `<td>${esc(t.postingDate)}</td>`,
       col_description: `<td>${esc(t.description)} ${recurBadge}</td>`,
       col_category:    `<td>${categorySelect}</td>`,
-      col_subcategory: `<td>${subcatSelect}</td>`,
       col_importance:  `<td>${importanceSelect}</td>`,
       col_account:     `<td>${acctCell}</td>`,
       col_type:        `<td>${typeBadge}</td>`,

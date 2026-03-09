@@ -153,27 +153,19 @@ document.getElementById('btn-import-cancel').addEventListener('click', cancelImp
 document.getElementById('import-preview').addEventListener('click', async e => {
   const acceptAllCatBtn = e.target.closest('#btn-accept-all-category-suggestions');
   const declineAllCatBtn = e.target.closest('#btn-decline-all-category-suggestions');
-  const acceptAllSubBtn = e.target.closest('#btn-accept-all-subcategory-suggestions');
-  const declineAllSubBtn = e.target.closest('#btn-decline-all-subcategory-suggestions');
   const acceptCategoryBtn = e.target.closest('.btn-accept-category-suggestion');
   const editCategoryBtn = e.target.closest('.btn-edit-category-suggestion');
   const mergeCategoryBtn = e.target.closest('.btn-merge-category-suggestion');
   const declineCategoryBtn = e.target.closest('.btn-decline-category-suggestion');
-  const acceptSubBtn = e.target.closest('.btn-accept-subcategory-suggestion');
-  const declineSubBtn = e.target.closest('.btn-decline-subcategory-suggestion');
   const uid = auth.currentUser?.uid;
   if (!uid) return;
 
   if (acceptAllCatBtn) await acceptAllCategorySuggestions(uid);
   if (declineAllCatBtn) declineAllCategorySuggestions();
-  if (acceptAllSubBtn) await acceptAllSubcategorySuggestions(uid);
-  if (declineAllSubBtn) declineAllSubcategorySuggestions();
   if (acceptCategoryBtn) await acceptCategorySuggestion(uid, acceptCategoryBtn.dataset.key);
   if (editCategoryBtn) editCategorySuggestion(editCategoryBtn.dataset.key);
   if (mergeCategoryBtn) mergeCategorySuggestion(mergeCategoryBtn.dataset.key);
   if (declineCategoryBtn) declineCategorySuggestion(declineCategoryBtn.dataset.key);
-  if (acceptSubBtn) await acceptSubcategorySuggestion(uid, acceptSubBtn.dataset.key);
-  if (declineSubBtn) declineSubcategorySuggestion(declineSubBtn.dataset.key);
 });
 
 document.getElementById('form-edit-category-suggestion').addEventListener('submit', e => {
@@ -293,10 +285,9 @@ document.getElementById('tx-list').addEventListener('click', async e => {
   }
 });
 
-// Event delegation for inline category/subcategory/importance dropdowns
+// Event delegation for inline category/importance dropdowns
 document.getElementById('tx-list').addEventListener('change', async e => {
   const catSelect  = e.target.closest('.tx-select-category');
-  const subSelect  = e.target.closest('.tx-select-subcategory');
   const impSelect  = e.target.closest('.tx-select-importance');
   const uid        = auth.currentUser?.uid;
   if (!uid) return;
@@ -309,41 +300,11 @@ document.getElementById('tx-list').addEventListener('change', async e => {
       const custom = prompt('Enter new category name:');
       if (!custom) { catSelect.value = ''; return; }
       // Save new category definition
-      await saveCategoryDefinition(uid, { name: custom.trim(), subcategories: [] });
+      await saveCategoryDefinition(uid, { name: custom.trim() });
       value = custom.trim();
     }
     
-    await updateTransaction(uid, txId, { category: value, subcategory: '' });
-    await loadAndRenderTxList(uid);
-  }
-
-  if (subSelect) {
-    const txId = subSelect.dataset.id;
-    let value  = subSelect.value;
-    
-    if (value === '__other__') {
-      const custom = prompt('Enter new subcategory name:');
-      if (!custom) { subSelect.value = ''; return; }
-      value = custom.trim();
-      
-      // Find the row to get current category and update its definition
-      const row = subSelect.closest('tr');
-      const catSelectInRow = row?.querySelector('.tx-select-category');
-      const currentCat = catSelectInRow?.value;
-      if (currentCat) {
-        const allCats = await getCategoryDefinitions(uid);
-        const catDef = allCats.find(c => c.name === currentCat);
-        if (catDef) {
-          const subs = catDef.subcategories || [];
-          if (!subs.includes(value)) {
-            subs.push(value);
-            await saveCategoryDefinition(uid, { id: catDef.id, name: catDef.name, subcategories: subs });
-          }
-        }
-      }
-    }
-    
-    await updateTransaction(uid, txId, { subcategory: value });
+    await updateTransaction(uid, txId, { category: value });
     await loadAndRenderTxList(uid);
   }
 

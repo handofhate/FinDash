@@ -6,7 +6,6 @@ const TX_COLUMNS = [
   { key: 'col_date',        label: 'Date' },
   { key: 'col_description', label: 'Description' },
   { key: 'col_category',    label: 'Category' },
-  { key: 'col_subcategory', label: 'Subcategory' },
   { key: 'col_importance',  label: 'Importance' },
   { key: 'col_account',     label: 'Account' },
   { key: 'col_type',        label: 'Type' },
@@ -22,7 +21,6 @@ const SETTING_DEFAULTS = {
   col_date:        true,
   col_description: true,
   col_category:    true,
-  col_subcategory: true,
   col_importance:  true,
   col_account:     true,
   col_type:        true,
@@ -234,12 +232,10 @@ function _renderFiltersSettings(filters) {
 function _renderCategoriesSettings(categories) {
   const rows = categories.length
     ? categories.map(cat => {
-        const subs = (cat.subcategories || []).join(', ') || '<span class="text-muted">none</span>';
         return `
         <div class="category-row" data-id="${cat.id}">
           <div class="category-row-main">
             <span class="category-name">${esc(cat.name)}</span>
-            <span class="category-subs"><strong>Subs:</strong> ${subs}</span>
           </div>
           <div class="category-row-actions">
             <button class="btn-icon btn-edit-category" data-id="${cat.id}" title="Edit">✏️</button>
@@ -256,7 +252,7 @@ function _renderCategoriesSettings(categories) {
         <button class="btn btn-danger btn-sm" id="btn-delete-all-categories">Delete All Categories</button>
       </div>
       <p class="text-muted" style="font-size:12px;margin-bottom:12px">
-        Define categories for organizing transactions. Each category can have optional subcategories.
+        Define categories for organizing transactions.
       </p>
       <div id="category-list">${rows}</div>
     </div>
@@ -266,10 +262,6 @@ function _renderCategoriesSettings(categories) {
       <div class="form-group" style="margin-bottom:10px">
         <label for="cat-name">Category Name *</label>
         <input type="text" id="cat-name" placeholder="e.g. Food & Dining, Transportation" />
-      </div>
-      <div class="form-group">
-        <label for="cat-subcategories">Subcategories (comma-separated)</label>
-        <input type="text" id="cat-subcategories" placeholder="e.g. Groceries, Restaurants, Fast Food" />
       </div>
       <button class="btn btn-primary btn-sm" id="btn-save-category">Save Category</button>
       <button class="btn btn-ghost btn-sm" id="btn-cancel-category">Cancel</button>
@@ -381,39 +373,33 @@ function _wireCategorySettings() {
       if (!cat) return;
       document.getElementById('cat-id').value = cat.id;
       document.getElementById('cat-name').value = cat.name || '';
-      document.getElementById('cat-subcategories').value = (cat.subcategories || []).join(', ');
     }
   });
 
   document.getElementById('btn-save-category')?.addEventListener('click', async () => {
     const id   = document.getElementById('cat-id').value.trim();
     const name = document.getElementById('cat-name').value.trim();
-    const subs = document.getElementById('cat-subcategories').value.split(',').map(s => s.trim()).filter(Boolean);
     if (!name) { showToast('Category name is required', 'error'); return; }
 
-    const catId = await saveCategoryDefinition(_settingsUid, { id: id || undefined, name, subcategories: subs });
+    const catId = await saveCategoryDefinition(_settingsUid, { id: id || undefined, name });
     const existing = _settingsCategories.find(c => c.id === catId);
     if (existing) {
       existing.name = name;
-      existing.subcategories = subs;
     } else {
-      _settingsCategories.push({ id: catId, name, subcategories: subs });
+      _settingsCategories.push({ id: catId, name });
       _settingsCategories.sort((a, b) => a.name.localeCompare(b.name));
     }
 
     document.getElementById('cat-id').value = '';
     document.getElementById('cat-name').value = '';
-    document.getElementById('cat-subcategories').value = '';
 
     // Re-render category list
     const list = document.getElementById('category-list');
     const rows = _settingsCategories.map(cat => {
-      const subsStr = (cat.subcategories || []).join(', ') || '<span class="text-muted">none</span>';
       return `
         <div class="category-row" data-id="${cat.id}">
           <div class="category-row-main">
             <span class="category-name">${esc(cat.name)}</span>
-            <span class="category-subs"><strong>Subs:</strong> ${subsStr}</span>
           </div>
           <div class="category-row-actions">
             <button class="btn-icon btn-edit-category" data-id="${cat.id}" title="Edit">✏️</button>
@@ -429,6 +415,5 @@ function _wireCategorySettings() {
   document.getElementById('btn-cancel-category')?.addEventListener('click', () => {
     document.getElementById('cat-id').value = '';
     document.getElementById('cat-name').value = '';
-    document.getElementById('cat-subcategories').value = '';
   });
 }
