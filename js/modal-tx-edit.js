@@ -4,11 +4,13 @@ let _currentTxEdit = null; // Track the transaction being edited
 
 // Open the transaction edit modal for a given transaction
 async function openTxEditModal(uid, transaction, categories, bills) {
+  const allTransactions = await getAllTransactions(uid);
   _currentTxEdit = {
     uid,
     tx: transaction,
     categories,
     bills,
+    allTransactions,
     edits: {}, // { field: { newValue, scope, matchOn } }
   };
 
@@ -108,6 +110,10 @@ function _buildTxEditForm(tx, categories) {
         </div>
       </div>
 
+      <div id="tx-edit-impact" class="tx-edit-impact text-muted">
+        Ruleset impact: no existing transactions will be updated.
+      </div>
+
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" data-close="modal-tx-edit">Cancel</button>
         <button type="submit" class="btn btn-primary">Save Changes</button>
@@ -138,6 +144,8 @@ function _wireTxEditForm(uid, tx, categories, bills) {
         matchBtn?.classList.remove('hidden');
         matchDropdown?.classList.add('hidden'); // hidden by default until button clicked
       }
+
+      _updateRulesetImpact(tx);
     });
   });
 
@@ -149,6 +157,11 @@ function _wireTxEditForm(uid, tx, categories, bills) {
       const dropdown = form.querySelector(`.tx-edit-match-dropdown[data-field="${field}"]`);
       dropdown?.classList.toggle('hidden');
     });
+  });
+
+  form.querySelectorAll('.tx-edit-value, .tx-edit-match-on, .tx-edit-match-value').forEach(input => {
+    input.addEventListener('input', () => _updateRulesetImpact(tx));
+    input.addEventListener('change', () => _updateRulesetImpact(tx));
   });
 
   // Pre-populate match criteria values based on current transaction
@@ -166,39 +179,83 @@ function _wireTxEditForm(uid, tx, categories, bills) {
     e.preventDefault();
     await _saveTxEdits(uid, tx, categories, bills);
   });
+
+  _updateRulesetImpact(tx);
+}
+
+function _collectEditsFromForm(form, tx, { requireMatchValue } = { requireMatchValue: true }) {
+  const edits = [];
+  let error = '';
+
+  ['description', 'category', 'importance'].forEach(field => {
+    const input = form.querySelector(`.tx-edit-value[data-field="${field}"]`);
+    const newValue = String(input?.value || '').trim();
+    const oldValue = field === 'category' ? tx.category : field === 'description' ? tx.description : tx.importance;
+
+    if (!newValue || newValue === String(oldValue || '')) return;
+
+    const scope = form.querySelector(`.tx-edit-scope[data-field="${field}"]`)?.value || 'this_only';
+    const edit = { field, newValue, scope };
+
+    if (scope !== 'this_only') {
+      const matchOn = form.querySelector(`.tx-edit-match-on[data-field="${field}"]`)?.value || 'description';
+      const matchValue = String(form.querySelector(`.tx-edit-match-value[data-field="${field}"]`)?.value || '').trim();
+
+      if (!matchValue) {
+        if (requireMatchValue) {
+          error = `Match value required for field "${field}"`;
+        }
+        return;
+      }
+
+      edit.matchOn = matchOn;
+      edit.matchValue = matchValue;
+    }
+
+    edits.push(edit);
+  });
+
+  return { edits, error };
+}
+
+function _updateRulesetImpact(tx) {
+  const form = document.getElementById('form-tx-edit');
+  const impactEl = document.getElementById('tx-edit-impact');
+  if (!form || !impactEl) return;
+
+  const { edits, error } = _collectEditsFromForm(form, tx, { requireMatchValue: false });
+  if (error) {
+    impactEl.textContent = error;
+    return;
+  }
+
+  const existingScopeEdits = edits.filter(e => e.scope === 'existing_only' || e.scope === 'all');
+  if (!existingScopeEdits.length) {
+    impactEl.textContent = 'Ruleset impact: no existing transactions will be updated.';
+    return;
+  }
+
+  const allTxs = Array.isArray(_currentTxEdit?.allTransactions) ? _currentTxEdit.allTransactions : [];
+  const impacted = new Set();
+  existingScopeEdits.forEach(edit => {
+    _findMatchingTransactions(allTxs, edit.matchOn, edit.matchValue).forEach(t => {
+      if (t.id && t.id !== tx.id) impacted.add(t.id);
+    });
+  });
+
+  const count = impacted.size;
+  impactEl.textContent = `Ruleset impact: ${count} existing transaction${count === 1 ? '' : 's'} will be updated.`;
 }
 
 // Collect edits from form and save
 async function _saveTxEdits(uid, tx, categories, bills) {
   const form = document.getElementById('form-tx-edit');
-  const edits = [];
+  const { edits, error } = _collectEditsFromForm(form, tx, { requireMatchValue: true });
 
-  // Collect edits for each field
-  ['description', 'category', 'importance'].forEach(field => {
-    const input = form.querySelector(`.tx-edit-value[data-field="${field}"]`);
-    const newValue = input.value.trim();
-    const oldValue = field === 'category' ? tx.category : field === 'description' ? tx.description : tx.importance;
-
-    if (newValue && newValue !== String(oldValue || '')) {
-      const scope = form.querySelector(`.tx-edit-scope[data-field="${field}"]`).value;
-      const edit = { field, newValue, scope };
-
-      if (scope !== 'this_only') {
-        const matchOn = form.querySelector(`.tx-edit-match-on[data-field="${field}"]`).value;
-        const matchValue = form.querySelector(`.tx-edit-match-value[data-field="${field}"]`).value.trim();
-
-        if (!matchValue) {
-          showToast(`Match value required for field "${field}"`, 'error');
-          return;
-        }
-
-        edit.matchOn = matchOn;
-        edit.matchValue = matchValue;
-      }
-
-      edits.push(edit);
-    }
-  });
+  if (error) {
+    showToast(error, 'error');
+    return;
+  }
 
   if (edits.length === 0) {
     showToast('No changes made', 'info');

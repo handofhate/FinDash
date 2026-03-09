@@ -190,6 +190,7 @@ async function applyRulesets(rows) {
   if (!rulesets.length) return;
 
   rows.forEach(row => {
+    const baseRow = { ...row }; // Match criteria should be evaluated against original values.
     rulesets.forEach(rs => {
       if (!rs.edits || !Array.isArray(rs.edits)) return;
       rs.edits.forEach(edit => {
@@ -199,11 +200,11 @@ async function applyRulesets(rows) {
         // Check if this row matches the criteria
         let matches = false;
         if (edit.matchOn === 'description') {
-          matches = (row.description || '').toLowerCase().includes(edit.matchValue.toLowerCase());
+          matches = (baseRow.description || '').toLowerCase().includes(String(edit.matchValue || '').toLowerCase());
         } else if (edit.matchOn === 'category') {
-          matches = (row.category || '').toLowerCase() === edit.matchValue.toLowerCase();
+          matches = (baseRow.category || '').toLowerCase() === String(edit.matchValue || '').toLowerCase();
         } else if (edit.matchOn === 'amount') {
-          matches = String(row.amount || '').trim() === String(edit.matchValue).trim();
+          matches = String(baseRow.amount || '').trim() === String(edit.matchValue || '').trim();
         }
 
         if (matches) {
@@ -355,11 +356,6 @@ async function renderTransactionsTab(uid) {
   const catSel = document.getElementById('tx-category');
   catSel.innerHTML = '<option value="">All Categories</option>' +
     cats.map(c => `<option value="${c}">${esc(c)}</option>`).join('');
-
-  const sortBySel = document.getElementById('tx-sort-by');
-  const sortDirSel = document.getElementById('tx-sort-direction');
-  if (sortBySel) sortBySel.value = _txSort.key;
-  if (sortDirSel) sortDirSel.value = _txSort.dir;
 
   await loadAndRenderTxList(uid);
 }

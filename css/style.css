@@ -367,6 +367,11 @@ canvas { max-height: 280px; }
 .tx-edit-match-value:focus {
   outline: none; border-color: var(--accent);
 }
+.tx-edit-impact {
+  font-size: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
 
 /* ── Form Elements ────────────────────────────────────────────── */
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
