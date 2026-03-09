@@ -73,10 +73,127 @@ function postingDateToYearMonth(dateStr) {
 }
 
 // ─── Auto-Assignment Logic ────────────────────────────────────────────────────
+const _DESC_STOPWORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'for', 'to', 'of', 'at', 'on', 'in', 'with',
+  'payment', 'online', 'purchase', 'pos', 'debit', 'card', 'visa', 'mastercard',
+]);
+
+const _KEYWORD_RULES = [
+  { words: ['grocery', 'grocer', 'market', 'supermarket', 'aldi', 'kroger', 'publix', 'walmart'], category: 'Food & Dining', subcategory: 'Groceries', importance: 'Essential' },
+  { words: ['restaurant', 'cafe', 'coffee', 'starbucks', 'mcdonald', 'chipotle', 'doordash', 'uber eats'], category: 'Food & Dining', subcategory: 'Restaurants', importance: 'Optional' },
+  { words: ['uber', 'lyft', 'shell', 'chevron', 'exxon', 'fuel', 'gas', 'parking', 'toll'], category: 'Transportation', subcategory: 'Fuel & Transit', importance: 'Important' },
+  { words: ['netflix', 'spotify', 'hulu', 'disney', 'max', 'youtube'], category: 'Entertainment', subcategory: 'Streaming', importance: 'Optional' },
+  { words: ['rent', 'mortgage', 'hoa'], category: 'Housing', subcategory: 'Rent & Mortgage', importance: 'Essential' },
+  { words: ['electric', 'water', 'sewer', 'utility', 'internet', 'xfinity', 'comcast', 'att', 'verizon', 'tmobile'], category: 'Utilities', subcategory: 'Bills', importance: 'Essential' },
+  { words: ['insurance', 'geico', 'progressive', 'allstate'], category: 'Insurance', subcategory: 'Premiums', importance: 'Essential' },
+  { words: ['pharmacy', 'walgreens', 'cvs', 'hospital', 'clinic', 'medical', 'dental'], category: 'Health', subcategory: 'Medical', importance: 'Essential' },
+  { words: ['amazon', 'target', 'bestbuy', 'store'], category: 'Shopping', subcategory: 'General', importance: 'Optional' },
+];
+
+function _tokenizeDesc(str) {
+  return _normalizeDesc(str)
+    .split(' ')
+    .filter(t => t.length > 1 && !_DESC_STOPWORDS.has(t));
+}
+
+function _jaccardSimilarity(aTokens, bTokens) {
+  if (!aTokens.length || !bTokens.length) return 0;
+  const a = new Set(aTokens);
+  const b = new Set(bTokens);
+  let inter = 0;
+  a.forEach(t => { if (b.has(t)) inter++; });
+  const union = new Set([...a, ...b]).size;
+  return union ? inter / union : 0;
+}
+
+function _amountSimilarity(a, b) {
+  if (!a || !b) return 0.5;
+  const max = Math.max(a, b);
+  const ratio = max ? Math.abs(a - b) / max : 1;
+  return Math.max(0, 1 - ratio);
+}
+
+function _importanceFromCategoryName(category) {
+  const c = String(category || '').toLowerCase();
+  if (!c) return '';
+  if (['housing', 'utilities', 'insurance', 'health'].some(k => c.includes(k))) return 'Essential';
+  if (['transport', 'education', 'debt'].some(k => c.includes(k))) return 'Important';
+  if (['entertainment', 'shopping', 'travel'].some(k => c.includes(k))) return 'Optional';
+  return 'Low';
+}
+
+function _parseBankCategory(raw) {
+  const txt = String(raw || '').trim();
+  if (!txt) return { category: '', subcategory: '' };
+  const parts = txt.split(/[>/:-]/).map(s => s.trim()).filter(Boolean);
+  return {
+    category: parts[0] || txt,
+    subcategory: parts[1] || '',
+  };
+}
+
+function _deriveRecommendation(tokens, categoryDefs, bankCategory) {
+  // 1) Match against user-defined categories/subcategories
+  let best = null;
+  (categoryDefs || []).forEach(def => {
+    const catTokens = _tokenizeDesc(def.name || '');
+    const catScore  = _jaccardSimilarity(tokens, catTokens);
+    if (!best || catScore > best.score) {
+      best = { score: catScore, category: def.name, subcategory: '', source: 'defined-category', isNew: false };
+    }
+    (def.subcategories || []).forEach(sub => {
+      const subTokens = _tokenizeDesc(sub);
+      const subScore  = _jaccardSimilarity(tokens, subTokens);
+      if (!best || subScore > best.score) {
+        best = { score: subScore, category: def.name, subcategory: sub, source: 'defined-subcategory', isNew: false };
+      }
+    });
+  });
+  if (best && best.score >= 0.34) {
+    return {
+      category: best.category,
+      subcategory: best.subcategory,
+      importance: _importanceFromCategoryName(best.category),
+      source: best.source,
+      isNew: false,
+    };
+  }
+
+  // 2) Keyword-based inference (may suggest new categories)
+  for (const rule of _KEYWORD_RULES) {
+    if (rule.words.some(w => tokens.some(t => t.includes(w) || w.includes(t)))) {
+      const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === rule.category.toLowerCase());
+      return {
+        category: rule.category,
+        subcategory: rule.subcategory,
+        importance: rule.importance,
+        source: 'keyword',
+        isNew: !exists,
+      };
+    }
+  }
+
+  // 3) Fall back to bank-provided category if available
+  const parsed = _parseBankCategory(bankCategory);
+  if (parsed.category) {
+    const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === parsed.category.toLowerCase());
+    return {
+      category: parsed.category,
+      subcategory: parsed.subcategory,
+      importance: _importanceFromCategoryName(parsed.category),
+      source: 'bank-category',
+      isNew: !exists,
+    };
+  }
+
+  return null;
+}
+
 async function autoAssignCategories(uid, rows) {
   // Build pattern map from existing categorized transactions
   const existing = await getAllTransactions(uid);
-  const patternMap = {};  // normalized description → { category, subcategory, importance, count }
+  const categoryDefs = await getCategoryDefinitions(uid);
+  const patternMap = {};  // normalized description → { category, subcategory, importance, count, avgAmount, tokens }
 
   existing.forEach(tx => {
     if (!tx.category) return;
@@ -88,18 +205,70 @@ async function autoAssignCategories(uid, rows) {
         subcategory: tx.subcategory || '',
         importance: tx.importance || '',
         count: 0,
+        avgAmount: 0,
+        tokens: _tokenizeDesc(tx.description),
       };
     }
+    patternMap[key].avgAmount = ((patternMap[key].avgAmount * patternMap[key].count) + (tx.amount || 0)) / (patternMap[key].count + 1);
     patternMap[key].count++;
   });
 
+  const learnedPatterns = Object.entries(patternMap).map(([key, p]) => ({ key, ...p }));
+
   // Apply to new rows
   rows.forEach(row => {
+    const desc = String(row.description || '');
     const key = _normalizeDesc(row.description);
+    const tokens = _tokenizeDesc(desc);
+
+    // 1) Exact learned match from prior transactions
     if (key && patternMap[key] && patternMap[key].count >= 1) {
       row.category    = patternMap[key].category;
       row.subcategory = patternMap[key].subcategory;
-      row.importance  = patternMap[key].importance;
+      row.importance  = patternMap[key].importance || _importanceFromCategoryName(patternMap[key].category);
+      row._autoAssignedBy = 'exact-history';
+      row._autoAssignedConfidence = 0.98;
+      return;
+    }
+
+    // 2) Fuzzy learned match
+    let best = null;
+    learnedPatterns.forEach(p => {
+      const tokenScore = _jaccardSimilarity(tokens, p.tokens || []);
+      if (tokenScore < 0.2) return;
+      const amountScore = _amountSimilarity(row.amount || 0, p.avgAmount || 0);
+      const countScore  = Math.min(p.count / 4, 1);
+      const score = tokenScore * 0.72 + amountScore * 0.18 + countScore * 0.10;
+      if (!best || score > best.score) best = { score, pattern: p };
+    });
+
+    if (best && best.score >= 0.62) {
+      row.category    = best.pattern.category;
+      row.subcategory = best.pattern.subcategory;
+      row.importance  = best.pattern.importance || _importanceFromCategoryName(best.pattern.category);
+      row._autoAssignedBy = 'fuzzy-history';
+      row._autoAssignedConfidence = Math.round(best.score * 100) / 100;
+      return;
+    }
+
+    // 3) Recommendation path (defined categories, keyword inference, bank category)
+    const recommendation = _deriveRecommendation(tokens, categoryDefs, row.category);
+    if (recommendation) {
+      row._categoryRecommendation = recommendation.category;
+      row._subcategoryRecommendation = recommendation.subcategory || '';
+      row._importanceRecommendation = recommendation.importance || '';
+      row._recommendationSource = recommendation.source;
+      row._suggestedNewCategory = !!recommendation.isNew;
+
+      if (!row.category) row.category = recommendation.category;
+      if (!row.subcategory && recommendation.subcategory) row.subcategory = recommendation.subcategory;
+      if (!row.importance && recommendation.importance) row.importance = recommendation.importance;
+      return;
+    }
+
+    // 4) Final fallback: if a category exists but importance is blank, infer importance.
+    if (row.category && !row.importance) {
+      row.importance = _importanceFromCategoryName(row.category);
     }
   });
 }
@@ -582,10 +751,16 @@ function buildTxTable(txns, bills, compact) {
       const sign       = t.type === 'Credit' ? '+' : '-';
       const flagBadge  = t._flagged
         ? `<span class="badge badge-quarterly" title="${esc(t._flagReason)}">review</span>` : '';
+      const recoBadge  = t._suggestedNewCategory
+        ? '<span class="badge badge-annual" title="Recommended new category">new category</span>'
+        : (t._categoryRecommendation ? `<span class="badge badge-autopay" title="Suggested from ${esc(t._recommendationSource || 'rules')}">suggested</span>` : '');
+      const catText = t.category
+        ? esc(t.category)
+        : (t._categoryRecommendation ? esc(t._categoryRecommendation) : '<span class="text-muted">—</span>');
       return `<tr class="${t._flagged ? 'tx-flagged' : ''}">
         <td>${esc(t.postingDate)}</td>
         <td>${esc(t.description)} ${flagBadge}</td>
-        <td>${esc(t.category)}</td>
+        <td>${catText} ${recoBadge}</td>
         <td class="${amtClass}">${sign}${fmt(t.amount)}</td>
       </tr>`;
     }).join('');

@@ -94,7 +94,10 @@ async function importTransactions(uid, rows) {
     const batch = db.batch();
     newRows.slice(i, i + BATCH_SIZE).forEach(r => {
       const { txId, ...data } = r;
-      batch.set(txCol(uid).doc(txId), data);
+      const cleanData = Object.fromEntries(
+        Object.entries(data).filter(([k]) => !k.startsWith('_'))
+      );
+      batch.set(txCol(uid).doc(txId), cleanData);
     });
     await batch.commit();
     imported += Math.min(BATCH_SIZE, newRows.length - i);
