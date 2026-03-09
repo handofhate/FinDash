@@ -281,8 +281,21 @@ tbody td {
   padding: 6px 0;
   border-top: 1px dashed var(--border);
 }
+.import-sugg-row[data-kind="category-suggestion"] {
+  cursor: grab;
+}
+.import-sugg-row[data-kind="category-suggestion"]:active {
+  cursor: grabbing;
+}
 .import-sugg-row:first-child {
   border-top: none;
+}
+.import-sugg-row.is-dragging {
+  opacity: 0.45;
+}
+.import-sugg-row.drop-target {
+  background: rgba(99,102,241,0.12);
+  border-radius: var(--radius-sm);
 }
 .import-sugg-actions {
   display: flex;

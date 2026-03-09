@@ -168,6 +168,49 @@ document.getElementById('import-preview').addEventListener('click', async e => {
   if (declineSubBtn) declineSubcategorySuggestion(declineSubBtn.dataset.key);
 });
 
+let _dragCategorySuggestionKey = null;
+
+document.getElementById('import-preview').addEventListener('dragstart', e => {
+  const row = e.target.closest('.import-sugg-row[data-kind="category-suggestion"]');
+  if (!row) return;
+  _dragCategorySuggestionKey = row.dataset.key;
+  row.classList.add('is-dragging');
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', row.dataset.key || '');
+  }
+});
+
+document.getElementById('import-preview').addEventListener('dragend', () => {
+  _dragCategorySuggestionKey = null;
+  document.querySelectorAll('.import-sugg-row.is-dragging, .import-sugg-row.drop-target')
+    .forEach(el => el.classList.remove('is-dragging', 'drop-target'));
+});
+
+document.getElementById('import-preview').addEventListener('dragover', e => {
+  const target = e.target.closest('.import-sugg-row[data-kind="category-suggestion"]');
+  if (!target || !_dragCategorySuggestionKey || target.dataset.key === _dragCategorySuggestionKey) return;
+  e.preventDefault();
+  target.classList.add('drop-target');
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+});
+
+document.getElementById('import-preview').addEventListener('dragleave', e => {
+  const target = e.target.closest('.import-sugg-row[data-kind="category-suggestion"]');
+  if (!target) return;
+  const toEl = e.relatedTarget;
+  if (toEl && target.contains(toEl)) return;
+  target.classList.remove('drop-target');
+});
+
+document.getElementById('import-preview').addEventListener('drop', e => {
+  const target = e.target.closest('.import-sugg-row[data-kind="category-suggestion"]');
+  if (!target || !_dragCategorySuggestionKey || target.dataset.key === _dragCategorySuggestionKey) return;
+  e.preventDefault();
+  mergeCategorySuggestion(_dragCategorySuggestionKey, target.dataset.key);
+  _dragCategorySuggestionKey = null;
+});
+
 document.getElementById('btn-delete-all-txns').addEventListener('click', async () => {
   const uid = auth.currentUser?.uid;
   if (!uid) return;

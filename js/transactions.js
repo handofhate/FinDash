@@ -459,7 +459,7 @@ function _renderImportSuggestionPanels() {
 
   if (_pendingCategorySuggestions.length) {
     const list = _pendingCategorySuggestions.map(s => `
-      <div class="import-sugg-row" data-key="${esc(s.key)}">
+      <div class="import-sugg-row" data-kind="category-suggestion" data-key="${esc(s.key)}" draggable="true" title="Drag onto another category suggestion to merge">
         <div>
           <strong>${esc(s.name)}</strong>
           ${s.subcategories.length ? `<span class="text-muted"> · ${esc(s.subcategories.join(', '))}</span>` : ''}
@@ -573,21 +573,25 @@ function editCategorySuggestion(key) {
   _renderImportSuggestionPanels();
 }
 
-function mergeCategorySuggestion(key) {
-  const source = _pendingCategorySuggestions.find(s => s.key === key);
+function mergeCategorySuggestion(sourceKey, targetKeyOverride = null) {
+  const source = _pendingCategorySuggestions.find(s => s.key === sourceKey);
   if (!source) return;
 
-  const others = _pendingCategorySuggestions.filter(s => s.key !== key);
+  const others = _pendingCategorySuggestions.filter(s => s.key !== sourceKey);
   if (!others.length) {
     showToast('No other category suggestion to merge with', 'info');
     return;
   }
 
-  const options = others.map(s => s.name).join(', ');
-  const picked = prompt(`Merge "${source.name}" into which suggestion?\nOptions: ${options}`, others[0].name);
-  if (picked === null) return;
+  const target = targetKeyOverride
+    ? others.find(s => s.key === targetKeyOverride)
+    : (() => {
+        const options = others.map(s => s.name).join(', ');
+        const picked = prompt(`Merge "${source.name}" into which suggestion?\nOptions: ${options}`, others[0].name);
+        if (picked === null) return null;
+        return others.find(s => String(s.name).toLowerCase() === String(picked).toLowerCase());
+      })();
 
-  const target = others.find(s => String(s.name).toLowerCase() === String(picked).toLowerCase());
   if (!target) {
     showToast('Target suggestion not found. Use one of the listed names.', 'error');
     return;
