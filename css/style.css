@@ -313,7 +313,41 @@ canvas { max-height: 280px; }
   padding-top: 6px;
 }
 
-/* ── Transaction Edit Modal ───────────────────────────────────── */
+/* ── Transaction Edit Inline Dropdown ─────────────────────────── */
+.tx-edit-row {
+  background: var(--bg-card);
+}
+.tx-edit-row td {
+  padding: 0 !important;
+  border-top: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+}
+.tx-edit-dropdown {
+  padding: 20px;
+  animation: slideDown 0.2s ease-out;
+}
+.tx-edit-dropdown form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.tx-edit-dropdown .modal-footer {
+  margin-top: 10px;
+}
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 1000px;
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+}
 .tx-edit-field {
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 12px; background: var(--bg);

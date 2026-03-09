@@ -229,13 +229,13 @@ document.getElementById('tx-list').addEventListener('click', async e => {
   }
 });
 
-// Click on transaction row to open edit modal
+// Click on transaction row to open inline edit dropdown
 document.getElementById('tx-list').addEventListener('click', async e => {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
 
-  // Ignore clicks on buttons, selects, and action elements
-  if (e.target.closest('.btn') || e.target.closest('select') || e.target.closest('.tx-actions')) {
+  // Ignore clicks on buttons, selects, action elements, and the edit row itself
+  if (e.target.closest('.btn') || e.target.closest('select') || e.target.closest('.tx-actions') || e.target.closest('.tx-edit-row')) {
     return;
   }
 
@@ -263,8 +263,8 @@ document.getElementById('tx-list').addEventListener('click', async e => {
   const categories = await getCategoryDefinitions(uid);
   const bills = await getBills(uid);
 
-  // Open the edit modal
-  await openTxEditModal(uid, tx, categories, bills);
+  // Toggle inline edit dropdown
+  await toggleTxEditInline(uid, tx, categories, bills);
 });
 
 // Show/hide "new account name" field based on account selector value

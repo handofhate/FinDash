@@ -1,9 +1,26 @@
-// ── Transaction Edit Modal ────────────────────────────────────────────────────
+// ── Transaction Edit Inline Dropdown ──────────────────────────────────────────
 
 let _currentTxEdit = null; // Track the transaction being edited
+let _activeEditRow = null; // Track the currently open edit row
 
-// Open the transaction edit modal for a given transaction
-async function openTxEditModal(uid, transaction, categories, bills) {
+// Toggle inline edit dropdown for a given transaction
+async function toggleTxEditInline(uid, transaction, categories, bills) {
+  const txRow = document.querySelector(`tr[data-id="${transaction.id}"]`);
+  if (!txRow) return;
+
+  // Check if this transaction's edit row is already open
+  const existingEditRow = txRow.nextElementSibling;
+  if (existingEditRow?.classList.contains('tx-edit-row')) {
+    existingEditRow.remove();
+    _currentTxEdit = null;
+    _activeEditRow = null;
+    _removeEscapeHandler();
+    return;
+  }
+
+  // Close any other open edit rows
+  document.querySelectorAll('.tx-edit-row').forEach(row => row.remove());
+
   const allTransactions = await getAllTransactions(uid);
   _currentTxEdit = {
     uid,
@@ -14,13 +31,38 @@ async function openTxEditModal(uid, transaction, categories, bills) {
     edits: {}, // { field: { newValue, scope, matchOn } }
   };
 
-  const body = document.getElementById('modal-tx-edit-body');
-  body.innerHTML = _buildTxEditForm(transaction, categories);
+  // Create inline edit row
+  const colCount = txRow.querySelectorAll('td').length;
+  const editRow = document.createElement('tr');
+  editRow.className = 'tx-edit-row';
+  editRow.innerHTML = `<td colspan="${colCount}"><div class="tx-edit-dropdown">${_buildTxEditForm(transaction, categories)}</div></td>`;
+  
+  txRow.after(editRow);
+  _activeEditRow = editRow;
 
   // Wire up field change listeners
   _wireTxEditForm(uid, transaction, categories, bills);
 
-  openModal('modal-tx-edit');
+  // Add escape key handler
+  _addEscapeHandler();
+}
+
+// Close edit dropdown with Escape key
+function _addEscapeHandler() {
+  document.addEventListener('keydown', _escapeHandler);
+}
+
+function _removeEscapeHandler() {
+  document.removeEventListener('keydown', _escapeHandler);
+}
+
+function _escapeHandler(e) {
+  if (e.key === 'Escape' && _activeEditRow) {
+    _activeEditRow.remove();
+    _activeEditRow = null;
+    _currentTxEdit = null;
+    _removeEscapeHandler();
+  }
 }
 
 // Build the form HTML for editing a transaction
@@ -115,7 +157,7 @@ function _buildTxEditForm(tx, categories) {
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-ghost" data-close="modal-tx-edit">Cancel</button>
+        <button type="button" class="btn btn-ghost" id="btn-cancel-tx-edit">Cancel</button>
         <button type="submit" class="btn btn-primary">Save Changes</button>
       </div>
     </form>
@@ -173,6 +215,17 @@ function _wireTxEditForm(uid, tx, categories, bills) {
 
   const amountInput = form.querySelector('.tx-edit-match-value[data-field="amount"]');
   if (amountInput && tx.amount) amountInput.value = String(tx.amount);
+
+  // Cancel button
+  const cancelBtn = document.getElementById('btn-cancel-tx-edit');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      _activeEditRow?.remove();
+      _activeEditRow = null;
+      _currentTxEdit = null;
+      _removeEscapeHandler();
+    });
+  }
 
   // Form submission
   form.addEventListener('submit', async e => {
@@ -382,7 +435,10 @@ async function _applyTxEdits(uid, tx, edits) {
       }
     }
 
-    closeModal('modal-tx-edit');
+    _activeEditRow?.remove();
+    _activeEditRow = null;
+    _currentTxEdit = null;
+    _removeEscapeHandler();
     await loadAndRenderTxList(uid);
     showToast('Changes saved', 'success');
   } catch (err) {
