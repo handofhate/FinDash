@@ -635,12 +635,7 @@ function buildTxTable(txns, bills, compact) {
   const s    = getSettings();
   const cols = TX_COLUMNS.filter(c => s[c.key] !== false);
 
-  // Build category/importance dropdown options
-  const categoryOpts = ['<option value="">—</option>']
-    .concat(_categoryDefs.map(c => `<option value="${esc(c.name)}"${c.name === '___SELECTED___' ? ' selected' : ''}>${esc(c.name)}</option>`))
-    .concat(['<option value="__other__">+ Other...</option>'])
-    .join('');
-
+  // Build importance dropdown options
   const importanceOpts = ['<option value="">—</option>']
     .concat(IMPORTANCE_LEVELS.map(lvl => `<option value="${lvl}"${lvl === '___SELECTED___' ? ' selected' : ''}>${lvl}</option>`))
     .join('');
@@ -663,15 +658,16 @@ function buildTxTable(txns, bills, compact) {
       ? `<button class="btn btn-ghost btn-sm btn-unhide-tx" data-id="${t.id}">Unhide</button>`
       : `<button class="btn-icon btn-hide-tx" data-id="${t.id}" title="Hide this transaction">&#128065;</button>`;
 
-    const selectedCat     = t.category || '';
-
-    const categorySelect = `<select class="tx-inline-select tx-select-category" data-id="${t.id}">${categoryOpts.replace('___SELECTED___', selectedCat)}</select>`;
+    const currentCategory = (t.category || t.rawCategory || '').trim();
+    const categoryDisplay = currentCategory
+      ? `<button type="button" class="tx-category-editable" data-id="${t.id}" data-bank-category="${esc(t.rawCategory || '')}" data-category="${esc(currentCategory)}">${esc(currentCategory)}</button>`
+      : `<button type="button" class="tx-category-editable is-empty" data-id="${t.id}" data-bank-category="${esc(t.rawCategory || '')}" data-category="">Set category</button>`;
     const importanceSelect = `<select class="tx-inline-select tx-select-importance" data-id="${t.id}">${importanceOpts.replace('___SELECTED___', t.importance || '')}</select>`;
 
     const cellMap = {
       col_date:        `<td>${esc(t.postingDate)}</td>`,
       col_description: `<td>${esc(t.description)} ${recurBadge}</td>`,
-      col_category:    `<td>${categorySelect}</td>`,
+      col_category:    `<td>${categoryDisplay}</td>`,
       col_importance:  `<td>${importanceSelect}</td>`,
       col_account:     `<td>${acctCell}</td>`,
       col_type:        `<td>${typeBadge}</td>`,

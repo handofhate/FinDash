@@ -399,6 +399,27 @@ body.compact-rows tbody td { padding: 5px 12px; font-size: 12px; }
 .tx-inline-select:focus { outline: none; border-color: var(--accent); }
 .tx-inline-select:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.tx-category-editable {
+  background: transparent;
+  border: 1px dashed transparent;
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  font-size: 12px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tx-category-editable:hover {
+  border-color: var(--border);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.tx-category-editable.is-empty {
+  color: var(--text-muted);
+}
+
 /* ── Settings Modal ───────────────────────────────────────────── */
 .modal-lg { max-width: 720px; }
 .settings-tabs {

@@ -219,34 +219,50 @@ document.getElementById('tx-list').addEventListener('click', async e => {
   }
 });
 
-// Event delegation for inline category/importance dropdowns
+// Event delegation for inline importance dropdown
 document.getElementById('tx-list').addEventListener('change', async e => {
-  const catSelect  = e.target.closest('.tx-select-category');
   const impSelect  = e.target.closest('.tx-select-importance');
   const uid        = auth.currentUser?.uid;
   if (!uid) return;
-
-  if (catSelect) {
-    const txId = catSelect.dataset.id;
-    let value  = catSelect.value;
-    
-    if (value === '__other__') {
-      const custom = prompt('Enter new category name:');
-      if (!custom) { catSelect.value = ''; return; }
-      // Save new category definition
-      await saveCategoryDefinition(uid, { name: custom.trim() });
-      value = custom.trim();
-    }
-    
-    await updateTransaction(uid, txId, { category: value });
-    await loadAndRenderTxList(uid);
-  }
 
   if (impSelect) {
     const txId = impSelect.dataset.id;
     const value = impSelect.value;
     await updateTransaction(uid, txId, { importance: value });
   }
+});
+
+// Click category cell to edit category and remember mapping for future imports.
+document.getElementById('tx-list').addEventListener('click', async e => {
+  const catBtn = e.target.closest('.tx-category-editable');
+  if (!catBtn) return;
+
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+
+  const txId = catBtn.dataset.id;
+  const current = (catBtn.dataset.category || '').trim();
+  const bankCategory = (catBtn.dataset.bankCategory || '').trim();
+  const next = prompt('Edit category:', current || bankCategory || '');
+  if (next === null) return;
+
+  const value = next.trim();
+  if (!value) {
+    showToast('Category cannot be empty', 'error');
+    return;
+  }
+
+  // Keep category list in Settings up-to-date for manual organization.
+  await saveCategoryDefinition(uid, { name: value });
+  await updateTransaction(uid, txId, { category: value });
+
+  // Remember explicit renames from bank categories for future imports.
+  if (bankCategory) {
+    await saveCategoryMapping(uid, bankCategory, value);
+  }
+
+  await loadAndRenderTxList(uid);
+  showToast('Category updated', 'success');
 });
 
 // Show/hide "new account name" field based on account selector value
