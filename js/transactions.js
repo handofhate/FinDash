@@ -569,6 +569,19 @@ function _removeSubcategorySuggestionsForCategory(categoryName) {
   );
 }
 
+function _hasLocalAiSource(source) {
+  return String(source || '').toLowerCase().split(',').map(s => s.trim()).includes('local-ai');
+}
+
+function _sourcePillsHtml(source) {
+  const items = String(source || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!items.length) return '';
+  return items.map(src => {
+    if (src === 'local-ai') return '<span class="badge badge-ai" title="Suggested by Local AI">AI</span>';
+    return `<span class="badge badge-autopay" title="Suggestion source">${esc(src)}</span>`;
+  }).join(' ');
+}
+
 function _renderImportSuggestionPanels() {
   const wrap = document.getElementById('import-preview-table-wrap');
   if (!wrap) return;
@@ -593,9 +606,9 @@ function _renderImportSuggestionPanels() {
     const list = _pendingCategorySuggestions.map(s => `
       <div class="import-sugg-row" data-kind="category-suggestion" data-key="${esc(s.key)}" draggable="true" title="Drag onto another category suggestion to merge">
         <div>
-          <strong>${esc(s.name)}</strong>
+          <strong>${esc(s.name)}</strong> ${_hasLocalAiSource(s.source) ? '<span class="badge badge-ai" title="Suggested by Local AI">AI</span>' : ''}
           ${s.subcategories.length ? `<span class="text-muted"> · ${esc(s.subcategories.join(', '))}</span>` : ''}
-          <div class="text-muted" style="font-size:11px">${s.count} transaction(s), source: ${esc(s.source)}</div>
+          <div class="text-muted" style="font-size:11px">${s.count} transaction(s), source: ${_sourcePillsHtml(s.source)}</div>
         </div>
         <div class="import-sugg-actions">
           <button class="btn btn-primary btn-sm btn-accept-category-suggestion" data-key="${esc(s.key)}">Accept</button>
@@ -629,9 +642,9 @@ function _renderImportSuggestionPanels() {
     const list = _pendingSubcategorySuggestions.map(s => `
       <div class="import-sugg-row" data-key="${esc(s.key)}">
         <div>
-          <strong>${esc(s.category)}</strong>
+          <strong>${esc(s.category)}</strong> ${_hasLocalAiSource(s.source) ? '<span class="badge badge-ai" title="Suggested by Local AI">AI</span>' : ''}
           <span class="text-muted"> → ${esc(s.subcategory)}</span>
-          <div class="text-muted" style="font-size:11px">${s.count} transaction(s), source: ${esc(s.source)}</div>
+          <div class="text-muted" style="font-size:11px">${s.count} transaction(s), source: ${_sourcePillsHtml(s.source)}</div>
         </div>
         <div class="import-sugg-actions">
           <button class="btn btn-primary btn-sm btn-accept-subcategory-suggestion" data-key="${esc(s.key)}">Accept</button>
@@ -1328,6 +1341,9 @@ function buildTxTable(txns, bills, compact) {
       const recoBadge  = t._suggestedNewCategory
         ? '<span class="badge badge-annual" title="Recommended new category">new category</span>'
         : (t._categoryRecommendation ? `<span class="badge badge-autopay" title="Suggested from ${esc(t._recommendationSource || 'rules')}">suggested</span>` : '');
+      const aiRecoBadge = t._recommendationSource === 'local-ai'
+        ? '<span class="badge badge-ai" title="Category suggestion came from Local AI">AI suggestion</span>'
+        : '';
       const sourceLabel = t._autoAssignedBy
         ? `<span class="badge badge-manual" title="Auto-assigned by ${esc(t._autoAssignedBy)}">${esc(t._autoAssignedBy)}</span>`
         : '';
@@ -1340,7 +1356,7 @@ function buildTxTable(txns, bills, compact) {
       return `<tr class="${t._flagged ? 'tx-flagged' : ''}">
         <td>${esc(t.postingDate)}</td>
         <td>${esc(t.description)} ${flagBadge}</td>
-        <td>${catText} ${recoBadge} ${sourceLabel} ${confLabel}</td>
+        <td>${catText} ${recoBadge} ${aiRecoBadge} ${sourceLabel} ${confLabel}</td>
         <td class="${amtClass}">${sign}${fmt(t.amount)}</td>
       </tr>`;
     }).join('');
