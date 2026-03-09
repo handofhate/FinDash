@@ -60,6 +60,7 @@ function mapBankRow(row) {
     amount,
     description: description.trim(),
     category:    category.trim(),
+    rawCategory: category.trim(),
     balance,
     extDesc:     extDesc.trim(),
   };
@@ -152,7 +153,9 @@ function _deriveRecommendation(tokens, categoryDefs, bankCategory) {
       }
     });
   });
-  if (best && best.score >= 0.34) {
+  // Require stronger semantic overlap before auto-mapping to an existing category.
+  // Lower thresholds were collapsing too many distinct categories into one bucket.
+  if (best && best.score >= 0.58) {
     return {
       category: best.category,
       subcategory: best.subcategory,
@@ -196,6 +199,7 @@ async function autoAssignCategories(uid, rows) {
   // Build pattern map from existing categorized transactions
   const existing = await getAllTransactions(uid);
   const categoryDefs = await getCategoryDefinitions(uid);
+  const settings = getSettings();
   const patternMap = {};  // normalized description → { category, subcategory, importance, count, avgAmount, tokens }
 
   existing.forEach(tx => {
@@ -217,6 +221,17 @@ async function autoAssignCategories(uid, rows) {
   });
 
   const learnedPatterns = Object.entries(patternMap).map(([key, p]) => ({ key, ...p }));
+
+  // Optional local AI pass (Transformers.js) for rows that do not hit history-based matches.
+  const aiPredByTxId = new Map();
+  if (settings.aiLocalMode && window.LocalAI?.suggestRows) {
+    try {
+      const aiPredictions = await window.LocalAI.suggestRows(rows, categoryDefs, { threshold: 0.52, maxRows: 150 });
+      aiPredictions.forEach(p => aiPredByTxId.set(p.txId, p));
+    } catch {
+      // Fallback to deterministic logic if AI model is unavailable.
+    }
+  }
 
   // Apply to new rows
   rows.forEach(row => {
@@ -254,6 +269,21 @@ async function autoAssignCategories(uid, rows) {
       return;
     }
 
+    // 2.5) Local AI suggestion (when enabled)
+    const ai = aiPredByTxId.get(row.txId);
+    if (ai?.category) {
+      row.category = ai.category;
+      row._categoryRecommendation = ai.category;
+      if (ai.subcategory) row._subcategoryRecommendation = ai.subcategory;
+      row._importanceRecommendation = _importanceFromCategoryName(ai.category);
+      row._recommendationSource = 'local-ai';
+      row._suggestedNewCategory = !(categoryDefs || []).some(c => String(c.name || '').toLowerCase() === String(ai.category).toLowerCase());
+      row.importance = row.importance || _importanceFromCategoryName(ai.category);
+      row._autoAssignedBy = 'local-ai';
+      row._autoAssignedConfidence = Math.round((ai.score || 0) * 100) / 100;
+      return;
+    }
+
     // 3) Recommendation path (defined categories, keyword inference, bank category)
     const recommendation = _deriveRecommendation(tokens, categoryDefs, row.category);
     if (recommendation) {
@@ -280,18 +310,17 @@ async function autoAssignCategories(uid, rows) {
 function _collectCategorySuggestions(rows, categoryDefs) {
   const existingNames = new Set((categoryDefs || []).map(c => String(c.name || '').toLowerCase()));
   const suggestions = new Map();
-  rows.forEach(r => {
-    const name = String(r._categoryRecommendation || '').trim();
-    if (!name) return;
 
-    const isActuallyNew = !existingNames.has(name.toLowerCase());
-    if (!isActuallyNew) return;
+  function addSuggestion(name, sub, source) {
+    const cleaned = String(name || '').trim();
+    if (!cleaned) return;
+    const key = cleaned.toLowerCase();
+    if (existingNames.has(key)) return;
 
-    const key = name.toLowerCase();
     if (!suggestions.has(key)) {
       suggestions.set(key, {
         key,
-        name,
+        name: cleaned,
         subcategories: new Set(),
         sources: new Set(),
         count: 0,
@@ -299,10 +328,22 @@ function _collectCategorySuggestions(rows, categoryDefs) {
     }
 
     const item = suggestions.get(key);
-    const sub = String(r._subcategoryRecommendation || '').trim();
-    if (sub) item.subcategories.add(sub);
-    item.sources.add(String(r._recommendationSource || 'rules'));
+    const subClean = String(sub || '').trim();
+    if (subClean) item.subcategories.add(subClean);
+    if (source) item.sources.add(String(source));
     item.count += 1;
+  }
+
+  rows.forEach(r => {
+    addSuggestion(r._categoryRecommendation, r._subcategoryRecommendation, r._recommendationSource || 'rules');
+
+    // Also suggest unseen bank labels when they differ from the mapped category.
+    const raw = String(r.rawCategory || '').trim();
+    const mapped = String(r._categoryRecommendation || r.category || '').trim();
+    if (raw && raw.toLowerCase() !== mapped.toLowerCase()) {
+      const parsed = _parseBankCategory(raw);
+      addSuggestion(parsed.category || raw, parsed.subcategory || '', 'bank-raw');
+    }
   });
 
   return [...suggestions.values()].map(s => ({

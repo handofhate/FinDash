@@ -18,6 +18,7 @@ const SETTING_DEFAULTS = {
   theme:        'dark',
   compactRows:  false,
   hideZeroTx:   false,
+  aiLocalMode:  false,
   col_date:        true,
   col_description: true,
   col_category:    true,
@@ -167,6 +168,16 @@ function _renderDisplaySettings(s) {
         <input type="checkbox" data-setting="hideZeroTx" ${s.hideZeroTx ? 'checked' : ''}>
         <span>Hide $0.00 transactions</span>
       </label>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Import AI</div>
+      <label class="settings-toggle-row">
+        <input type="checkbox" data-setting="aiLocalMode" ${s.aiLocalMode ? 'checked' : ''}>
+        <span>Use local AI categorizer (Transformers.js, experimental)</span>
+      </label>
+      <p class="text-muted" style="font-size:12px;margin-top:4px">
+        First use downloads a model in your browser cache. Slower on older devices.
+      </p>
     </div>
     <div class="settings-section">
       <div class="settings-section-title">Visible Columns</div>
