@@ -6,6 +6,8 @@ const TX_COLUMNS = [
   { key: 'col_date',        label: 'Date' },
   { key: 'col_description', label: 'Description' },
   { key: 'col_category',    label: 'Category' },
+  { key: 'col_subcategory', label: 'Subcategory' },
+  { key: 'col_importance',  label: 'Importance' },
   { key: 'col_account',     label: 'Account' },
   { key: 'col_type',        label: 'Type' },
   { key: 'col_amount',      label: 'Amount' },
@@ -19,6 +21,8 @@ const SETTING_DEFAULTS = {
   col_date:        true,
   col_description: true,
   col_category:    true,
+  col_subcategory: true,
+  col_importance:  true,
   col_account:     true,
   col_type:        true,
   col_amount:      true,
@@ -90,30 +94,42 @@ function _filterMatches(row, filter) {
 }
 
 // ─── Settings Modal ───────────────────────────────────────────────────────────
-let _settingsTab     = 'display';
-let _settingsFilters = [];
-let _settingsUid     = null;
+let _settingsTab       = 'display';
+let _settingsFilters   = [];
+let _settingsCategories = [];
+let _settingsUid       = null;
 
 async function openSettingsModal(uid) {
-  _settingsUid     = uid;
-  _settingsFilters = uid ? await getImportFilters(uid) : [];
+  _settingsUid = uid;
+  if (uid) {
+    [_settingsFilters, _settingsCategories] = await Promise.all([
+      getImportFilters(uid),
+      getCategoryDefinitions(uid),
+    ]);
+  } else {
+    _settingsFilters   = [];
+    _settingsCategories = [];
+  }
   _renderSettingsContent();
   openModal('modal-settings');
 }
 
 function _renderSettingsContent() {
   const s = getSettings();
-  document.getElementById('settings-display-tab').innerHTML  = _renderDisplaySettings(s);
-  document.getElementById('settings-filters-tab').innerHTML  = _renderFiltersSettings(_settingsFilters);
+  document.getElementById('settings-display-tab').innerHTML    = _renderDisplaySettings(s);
+  document.getElementById('settings-categories-tab').innerHTML = _renderCategoriesSettings(_settingsCategories);
+  document.getElementById('settings-filters-tab').innerHTML    = _renderFiltersSettings(_settingsFilters);
   _switchSettingsTab(_settingsTab);
   _wireDisplaySettings();
+  _wireCategorySettings();
   _wireFilterSettings();
 }
 
 function _switchSettingsTab(tab) {
   _settingsTab = tab;
   document.querySelectorAll('.settings-tab-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.tab === tab));
+    b.classList.toggle('active', b.dcategories-tab').classList.toggle('hidden', tab !== 'categories');
+  document.getElementById('settings-ataset.tab === tab));
   document.getElementById('settings-display-tab').classList.toggle('hidden', tab !== 'display');
   document.getElementById('settings-filters-tab').classList.toggle('hidden', tab !== 'filters');
 }
@@ -198,6 +214,54 @@ function _renderFiltersSettings(filters) {
     </div>`;
 }
 
+function _renderCategoriesSettings(categories) {
+  const rows = categories.length
+    ? categories.map(cat => {
+        const subs = (cat.subcategories || []).join(', ') || '<span class="text-muted">none</span>';
+        return `
+        <div class="category-row" data-id="${cat.id}">
+          <div class="category-row-main">
+            <span class="category-name">${esc(cat.name)}</span>
+            <span class="category-subs"><strong>Subs:</strong> ${subs}</span>
+          </div>
+          <div class="category-row-actions">
+            <button class="btn-icon btn-edit-category" data-id="${cat.id}" title="Edit">✏️</button>
+            <button class="btn-icon btn-delete-category" data-id="${cat.id}" title="Delete">✕</button>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="text-muted" style="font-size:13px;padding:4px 0">No categories defined yet.</div>';
+
+  return `
+    <div class="settings-section">
+      <div class="settings-section-title">Categories</div>
+      <p class="text-muted" style="font-size:12px;margin-bottom:12px">
+        Define categories for organizing transactions. Each category can have optional subcategories.
+      </p>
+      <div id="category-list">${rows}</div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Add / Edit Category</div>
+      <input type="hidden" id="cat-id" />
+      <div class="form-group" style="margin-bottom:10px">
+        <label for="cat-name">Category Name *</label>
+        <input type="text" id="cat-name" placeholder="e.g. Food & Dining, Transportation" />
+      </div>
+      <div class="form-group">
+        <label for="cat-subcategories">Subcategories (comma-separated)</label>
+        <input type="text" id="cat-subcategories" placeholder="e.g. Groceries, Restaurants, Fast Food" />
+      </div>
+      <button class="btn btn-primary btn-sm" id="btn-save-category">Save Category</button>
+      <button class="btn btn-ghost btn-sm" id="btn-cancel-category">Cancel</button>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Importance Levels</div>
+      <p class="text-muted" style="font-size:12px">
+        Hard-coded importance tags: <strong>Essential</strong>, <strong>Important</strong>, <strong>Optional</strong>, <strong>Low</strong>
+      </p>
+    </div>`;
+}
+
 function _wireDisplaySettings() {
   document.querySelectorAll('#settings-display-tab [data-setting]').forEach(el => {
     el.addEventListener('change', () => {
@@ -251,5 +315,81 @@ function _wireFilterSettings() {
         <button class="btn-icon btn-delete-filter" data-id="${id}" title="Delete rule">✕</button>
       </div>`);
     showToast('Filter rule added', 'success');
+  });
+}
+
+function _wireCategorySettings() {
+  document.getElementById('category-list')?.addEventListener('click', async e => {
+    const deleteBtn = e.target.closest('.btn-delete-category');
+    const editBtn   = e.target.closest('.btn-edit-category');
+    if (!_settingsUid) return;
+
+    if (deleteBtn) {
+      const cat = _settingsCategories.find(c => c.id === deleteBtn.dataset.id);
+      if (!confirm(`Delete category "${cat?.name}"?`)) return;
+      await deleteCategoryDefinition(_settingsUid, deleteBtn.dataset.id);
+      _settingsCategories = _settingsCategories.filter(c => c.id !== deleteBtn.dataset.id);
+      deleteBtn.closest('.category-row').remove();
+      if (!_settingsCategories.length) {
+        document.getElementById('category-list').innerHTML =
+          '<div class="text-muted" style="font-size:13px;padding:4px 0">No categories defined yet.</div>';
+      }
+      showToast('Category deleted', 'info');
+    }
+
+    if (editBtn) {
+      const cat = _settingsCategories.find(c => c.id === editBtn.dataset.id);
+      if (!cat) return;
+      document.getElementById('cat-id').value = cat.id;
+      document.getElementById('cat-name').value = cat.name || '';
+      document.getElementById('cat-subcategories').value = (cat.subcategories || []).join(', ');
+    }
+  });
+
+  document.getElementById('btn-save-category')?.addEventListener('click', async () => {
+    const id   = document.getElementById('cat-id').value.trim();
+    const name = document.getElementById('cat-name').value.trim();
+    const subs = document.getElementById('cat-subcategories').value.split(',').map(s => s.trim()).filter(Boolean);
+    if (!name) { showToast('Category name is required', 'error'); return; }
+
+    const catId = await saveCategoryDefinition(_settingsUid, { id: id || undefined, name, subcategories: subs });
+    const existing = _settingsCategories.find(c => c.id === catId);
+    if (existing) {
+      existing.name = name;
+      existing.subcategories = subs;
+    } else {
+      _settingsCategories.push({ id: catId, name, subcategories: subs });
+      _settingsCategories.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    document.getElementById('cat-id').value = '';
+    document.getElementById('cat-name').value = '';
+    document.getElementById('cat-subcategories').value = '';
+
+    // Re-render category list
+    const list = document.getElementById('category-list');
+    const rows = _settingsCategories.map(cat => {
+      const subsStr = (cat.subcategories || []).join(', ') || '<span class="text-muted">none</span>';
+      return `
+        <div class="category-row" data-id="${cat.id}">
+          <div class="category-row-main">
+            <span class="category-name">${esc(cat.name)}</span>
+            <span class="category-subs"><strong>Subs:</strong> ${subsStr}</span>
+          </div>
+          <div class="category-row-actions">
+            <button class="btn-icon btn-edit-category" data-id="${cat.id}" title="Edit">✏️</button>
+            <button class="btn-icon btn-delete-category" data-id="${cat.id}" title="Delete">✕</button>
+          </div>
+        </div>`;
+    }).join('');
+    list.innerHTML = rows;
+
+    showToast(id ? 'Category updated' : 'Category added', 'success');
+  });
+
+  document.getElementById('btn-cancel-category')?.addEventListener('click', () => {
+    document.getElementById('cat-id').value = '';
+    document.getElementById('cat-name').value = '';
+    document.getElementById('cat-subcategories').value = '';
   });
 }

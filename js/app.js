@@ -215,6 +215,67 @@ document.getElementById('tx-list').addEventListener('click', async e => {
   }
 });
 
+// Event delegation for inline category/subcategory/importance dropdowns
+document.getElementById('tx-list').addEventListener('change', async e => {
+  const catSelect  = e.target.closest('.tx-select-category');
+  const subSelect  = e.target.closest('.tx-select-subcategory');
+  const impSelect  = e.target.closest('.tx-select-importance');
+  const uid        = auth.currentUser?.uid;
+  if (!uid) return;
+
+  if (catSelect) {
+    const txId = catSelect.dataset.id;
+    let value  = catSelect.value;
+    
+    if (value === '__other__') {
+      const custom = prompt('Enter new category name:');
+      if (!custom) { catSelect.value = ''; return; }
+      // Save new category definition
+      await saveCategoryDefinition(uid, { name: custom.trim(), subcategories: [] });
+      value = custom.trim();
+    }
+    
+    await updateTransaction(uid, txId, { category: value, subcategory: '' });
+    await loadAndRenderTxList(uid);
+  }
+
+  if (subSelect) {
+    const txId = subSelect.dataset.id;
+    let value  = subSelect.value;
+    
+    if (value === '__other__') {
+      const custom = prompt('Enter new subcategory name:');
+      if (!custom) { subSelect.value = ''; return; }
+      value = custom.trim();
+      
+      // Find the row to get current category and update its definition
+      const row = subSelect.closest('tr');
+      const catSelectInRow = row?.querySelector('.tx-select-category');
+      const currentCat = catSelectInRow?.value;
+      if (currentCat) {
+        const allCats = await getCategoryDefinitions(uid);
+        const catDef = allCats.find(c => c.name === currentCat);
+        if (catDef) {
+          const subs = catDef.subcategories || [];
+          if (!subs.includes(value)) {
+            subs.push(value);
+            await saveCategoryDefinition(uid, { id: catDef.id, name: catDef.name, subcategories: subs });
+          }
+        }
+      }
+    }
+    
+    await updateTransaction(uid, txId, { subcategory: value });
+    await loadAndRenderTxList(uid);
+  }
+
+  if (impSelect) {
+    const txId = impSelect.dataset.id;
+    const value = impSelect.value;
+    await updateTransaction(uid, txId, { importance: value });
+  }
+});
+
 // Show/hide "new account name" field based on account selector value
 document.getElementById('import-account-select').addEventListener('change', e => {
   document.getElementById('new-account-name-group').classList.toggle('hidden', e.target.value !== 'new');

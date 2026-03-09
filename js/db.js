@@ -6,6 +6,7 @@ const db = firebase.firestore();
 const billsCol      = uid => db.collection('users').doc(uid).collection('bills');
 const txCol         = uid => db.collection('users').doc(uid).collection('transactions');
 const accountsCol   = uid => db.collection('users').doc(uid).collection('accounts');
+const categoriesCol = uid => db.collection('users').doc(uid).collection('categories');
 
 // ─── Accounts ─────────────────────────────────────────────────────────────────
 async function getAccounts(uid) {
@@ -130,6 +131,32 @@ async function deleteTransactionsByAccount(uid, accountId) {
 
 async function setTransactionHidden(uid, txId, hidden) {
   await txCol(uid).doc(txId).set({ hidden }, { merge: true });
+}
+
+async function updateTransaction(uid, txId, fields) {
+  await txCol(uid).doc(txId).set(fields, { merge: true });
+}
+
+// ─── Category Definitions ─────────────────────────────────────────────────────
+const IMPORTANCE_LEVELS = ['Essential', 'Important', 'Optional', 'Low'];
+
+async function getCategoryDefinitions(uid) {
+  const snap = await categoriesCol(uid).get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function saveCategoryDefinition(uid, category) {
+  const { id, ...data } = category;
+  if (id) {
+    await categoriesCol(uid).doc(id).set(data, { merge: true });
+    return id;
+  }
+  const ref = await categoriesCol(uid).add(data);
+  return ref.id;
+}
+
+async function deleteCategoryDefinition(uid, categoryId) {
+  await categoriesCol(uid).doc(categoryId).delete();
 }
 
 // ─── Import Filters ───────────────────────────────────────────────────────────

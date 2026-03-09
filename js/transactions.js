@@ -2,6 +2,7 @@
 
 let _pendingImport = [];  // rows waiting for user confirmation
 let _showHidden    = false; // toggle to show/hide hidden transactions
+let _categoryDefs  = [];   // cached category definitions
 
 // ─── CSV Parsing ──────────────────────────────────────────────────────────────
 function parseTransactionCSV(file) {
@@ -71,6 +72,38 @@ function postingDateToYearMonth(dateStr) {
   return '';
 }
 
+// ─── Auto-Assignment Logic ────────────────────────────────────────────────────
+async function autoAssignCategories(uid, rows) {
+  // Build pattern map from existing categorized transactions
+  const existing = await getAllTransactions(uid);
+  const patternMap = {};  // normalized description → { category, subcategory, importance, count }
+
+  existing.forEach(tx => {
+    if (!tx.category) return;
+    const key = _normalizeDesc(tx.description);
+    if (!key) return;
+    if (!patternMap[key]) {
+      patternMap[key] = {
+        category: tx.category,
+        subcategory: tx.subcategory || '',
+        importance: tx.importance || '',
+        count: 0,
+      };
+    }
+    patternMap[key].count++;
+  });
+
+  // Apply to new rows
+  rows.forEach(row => {
+    const key = _normalizeDesc(row.description);
+    if (key && patternMap[key] && patternMap[key].count >= 1) {
+      row.category    = patternMap[key].category;
+      row.subcategory = patternMap[key].subcategory;
+      row.importance  = patternMap[key].importance;
+    }
+  });
+}
+
 // ─── Import Flow ──────────────────────────────────────────────────────────────
 async function handleCSVFile(file, uid) {
   showToast('Parsing CSV…', 'info');
@@ -82,6 +115,9 @@ async function handleCSVFile(file, uid) {
     const existing = await getImportedTxIds(uid);
     const newRows  = rows.filter(r => !existing.has(r.txId));
     const dupCount = rows.length - newRows.length;
+
+    // Auto-assign categories to new rows based on existing patterns
+    await autoAssignCategories(uid, newRows);
 
     // Apply import filter rules
     const filters = await getImportFilters(uid);
@@ -186,11 +222,14 @@ async function renderTransactionsTab(uid) {
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   // Populate filters in parallel
-  const [months, cats, accounts] = await Promise.all([
+  const [months, cats, accounts, categoryDefs] = await Promise.all([
     getTransactionMonths(uid),
     getTransactionCategories(uid),
     getAccounts(uid),
+    getCategoryDefinitions(uid),
   ]);
+
+  _categoryDefs = categoryDefs;
 
   const monthSel = document.getElementById('tx-month');
   monthSel.innerHTML = '<option value="">All Months</option>' +
@@ -560,6 +599,16 @@ function buildTxTable(txns, bills, compact) {
   const s    = getSettings();
   const cols = TX_COLUMNS.filter(c => s[c.key] !== false);
 
+  // Build category/subcategory/importance dropdown options
+  const categoryOpts = ['<option value="">—</option>']
+    .concat(_categoryDefs.map(c => `<option value="${esc(c.name)}"${c.name === '___SELECTED___' ? ' selected' : ''}>${esc(c.name)}</option>`))
+    .concat(['<option value="__other__">+ Other...</option>'])
+    .join('');
+
+  const importanceOpts = ['<option value="">—</option>']
+    .concat(IMPORTANCE_LEVELS.map(lvl => `<option value="${lvl}"${lvl === '___SELECTED___' ? ' selected' : ''}>${lvl}</option>`))
+    .join('');
+
   const rows = txns.map(t => {
     const isRecurring = billNames.some(name => name && t.description.toLowerCase().includes(name));
     const amtClass    = t.type === 'Credit' ? 'tx-amount-credit' : 'tx-amount-debit';
@@ -578,17 +627,32 @@ function buildTxTable(txns, bills, compact) {
       ? `<button class="btn btn-ghost btn-sm btn-unhide-tx" data-id="${t.id}">Unhide</button>`
       : `<button class="btn-icon btn-hide-tx" data-id="${t.id}" title="Hide this transaction">&#128065;</button>`;
 
+    // Build subcategory dropdown options based on selected category
+    const selectedCat     = t.category || '';
+    const selectedCatDef  = _categoryDefs.find(c => c.name === selectedCat);
+    const subcatOpts      = ['<option value="">—</option>']
+      .concat((selectedCatDef?.subcategories || []).map(sub => 
+        `<option value="${esc(sub)}"${sub === t.subcategory ? ' selected' : ''}>${esc(sub)}</option>`))
+      .concat(['<option value="__other__">+ Other...</option>'])
+      .join('');
+
+    const categorySelect = `<select class="tx-inline-select tx-select-category" data-id="${t.id}">${categoryOpts.replace('___SELECTED___', selectedCat)}</select>`;
+    const subcatSelect   = `<select class="tx-inline-select tx-select-subcategory" data-id="${t.id}" ${!selectedCat ? 'disabled' : ''}>${subcatOpts}</select>`;
+    const importanceSelect = `<select class="tx-inline-select tx-select-importance" data-id="${t.id}">${importanceOpts.replace('___SELECTED___', t.importance || '')}</select>`;
+
     const cellMap = {
       col_date:        `<td>${esc(t.postingDate)}</td>`,
       col_description: `<td>${esc(t.description)} ${recurBadge}</td>`,
-      col_category:    `<td>${esc(t.category)}</td>`,
+      col_category:    `<td>${categorySelect}</td>`,
+      col_subcategory: `<td>${subcatSelect}</td>`,
+      col_importance:  `<td>${importanceSelect}</td>`,
       col_account:     `<td>${acctCell}</td>`,
       col_type:        `<td>${typeBadge}</td>`,
       col_amount:      `<td class="${amtClass}">${sign}${fmt(t.amount)}</td>`,
       col_balance:     `<td class="text-muted">${t.balance !== undefined ? fmt(t.balance) : ''}</td>`,
     };
 
-    return `<tr class="${rowClass}">
+    return `<tr class="${rowClass}" data-id="${t.id}">
       ${cols.map(c => cellMap[c.key]).join('')}
       <td class="tx-actions">${actionBtn}</td>
     </tr>`;
