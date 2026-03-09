@@ -615,25 +615,13 @@ function buildTxTable(txns, bills, compact) {
       const sign       = t.type === 'Credit' ? '+' : '-';
       const flagBadge  = t._flagged
         ? `<span class="badge badge-quarterly" title="${esc(t._flagReason)}">review</span>` : '';
-      const recoBadge  = t._suggestedNewCategory
-        ? '<span class="badge badge-annual" title="Recommended new category">new category</span>'
-        : (t._categoryRecommendation ? `<span class="badge badge-autopay" title="Suggested from ${esc(t._recommendationSource || 'rules')}">suggested</span>` : '');
-      const aiRecoBadge = t._recommendationSource === 'local-ai'
-        ? '<span class="badge badge-ai" title="Category suggestion came from Local AI">AI suggestion</span>'
-        : '';
-      const sourceLabel = t._autoAssignedBy
-        ? `<span class="badge badge-manual" title="Auto-assigned by ${esc(t._autoAssignedBy)}">${esc(t._autoAssignedBy)}</span>`
-        : '';
-      const confLabel = Number.isFinite(t._autoAssignedConfidence)
-        ? `<span class="badge badge-quarterly" title="Assignment confidence">${Math.round(t._autoAssignedConfidence * 100)}%</span>`
-        : '';
       const catText = t.category
         ? esc(t.category)
         : (t._categoryRecommendation ? esc(t._categoryRecommendation) : '<span class="text-muted">—</span>');
       return `<tr class="${t._flagged ? 'tx-flagged' : ''}">
         <td>${esc(t.postingDate)}</td>
         <td>${esc(t.description)} ${flagBadge}</td>
-        <td>${catText} ${recoBadge} ${aiRecoBadge} ${sourceLabel} ${confLabel}</td>
+        <td>${catText}</td>
         <td class="${amtClass}">${sign}${fmt(t.amount)}</td>
       </tr>`;
     }).join('');
