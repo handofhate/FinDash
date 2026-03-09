@@ -17,11 +17,6 @@ const SETTING_DEFAULTS = {
   theme:        'dark',
   compactRows:  false,
   hideZeroTx:   false,
-  aiLocalMode:  false,
-  matchExactHistory:  true,
-  matchFuzzyHistory:  true,
-  matchKeywordRules:  true,
-  matchBankCategory:  true,
   col_date:        true,
   col_description: true,
   col_category:    true,
@@ -100,23 +95,27 @@ function _filterMatches(row, filter) {
 let _settingsTab       = 'display';
 let _settingsFilters   = [];
 let _settingsCategories = [];
+let _settingsMappings = {};
 let _settingsUid       = null;
 
 async function openSettingsModal(uid) {
   _settingsUid = uid;
   try {
     if (uid) {
-      [_settingsFilters, _settingsCategories] = await Promise.all([
+      [_settingsFilters, _settingsCategories, _settingsMappings] = await Promise.all([
         getImportFilters(uid),
         getCategoryDefinitions(uid),
+        getCategoryMappings(uid),
       ]);
     } else {
       _settingsFilters    = [];
       _settingsCategories = [];
+      _settingsMappings = {};
     }
   } catch (err) {
     _settingsFilters    = [];
     _settingsCategories = [];
+    _settingsMappings = {};
     showToast('Settings data failed to load. Showing defaults.', 'error');
   }
   _renderSettingsContent();
@@ -170,38 +169,6 @@ function _renderDisplaySettings(s) {
         <input type="checkbox" data-setting="hideZeroTx" ${s.hideZeroTx ? 'checked' : ''}>
         <span>Hide $0.00 transactions</span>
       </label>
-    </div>
-    <div class="settings-section">
-      <div class="settings-section-title">Import AI</div>
-      <label class="settings-toggle-row">
-        <input type="checkbox" data-setting="aiLocalMode" ${s.aiLocalMode ? 'checked' : ''}>
-        <span>Use local AI categorizer (Transformers.js, experimental)</span>
-      </label>
-      <p class="text-muted" style="font-size:12px;margin-top:4px">
-        First use downloads a model in your browser cache. Slower on older devices.
-      </p>
-    </div>
-    <div class="settings-section">
-      <div class="settings-section-title">Import Matching</div>
-      <label class="settings-toggle-row">
-        <input type="checkbox" data-setting="matchExactHistory" ${s.matchExactHistory !== false ? 'checked' : ''}>
-        <span>Exact history matching</span>
-      </label>
-      <label class="settings-toggle-row">
-        <input type="checkbox" data-setting="matchFuzzyHistory" ${s.matchFuzzyHistory !== false ? 'checked' : ''}>
-        <span>Fuzzy history matching</span>
-      </label>
-      <label class="settings-toggle-row">
-        <input type="checkbox" data-setting="matchKeywordRules" ${s.matchKeywordRules !== false ? 'checked' : ''}>
-        <span>Keyword rules</span>
-      </label>
-      <label class="settings-toggle-row">
-        <input type="checkbox" data-setting="matchBankCategory" ${s.matchBankCategory !== false ? 'checked' : ''}>
-        <span>Bank category fallback</span>
-      </label>
-      <p class="text-muted" style="font-size:12px;margin-top:4px">
-        Toggle off all except AI to test AI predictions in isolation.
-      </p>
     </div>
     <div class="settings-section">
       <div class="settings-section-title">Visible Columns</div>
@@ -271,14 +238,30 @@ function _renderCategoriesSettings(categories) {
       }).join('')
     : '<div class="text-muted" style="font-size:13px;padding:4px 0">No categories defined yet.</div>';
 
+  const mappingRows = Object.keys(_settingsMappings).length
+    ? Object.entries(_settingsMappings).map(([bankCat, mapped]) => {
+        return `
+        <div class="category-row" data-bank-cat="${esc(bankCat)}">
+          <div class="category-row-main">
+            <span class="text-muted" style="font-size:12px">Bank:</span> <strong>${esc(bankCat)}</strong>
+            <span style="margin:0 8px">→</span>
+            <span>${esc(mapped)}</span>
+          </div>
+          <div class="category-row-actions">
+            <button class="btn-icon btn-delete-mapping" data-bank-cat="${esc(bankCat)}" title="Delete mapping">✕</button>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="text-muted" style="font-size:13px;padding:4px 0">No bank category remappings yet. Import transactions to see bank categories.</div>';
+
   return `
     <div class="settings-section">
       <div class="settings-section-head">
-        <div class="settings-section-title" style="margin-bottom:0">Categories</div>
+        <div class="settings-section-title" style="margin-bottom:0">Custom Categories</div>
         <button class="btn btn-danger btn-sm" id="btn-delete-all-categories">Delete All Categories</button>
       </div>
       <p class="text-muted" style="font-size:12px;margin-bottom:12px">
-        Define categories for organizing transactions.
+        Add custom categories or accept suggestions during import.
       </p>
       <div id="category-list">${rows}</div>
     </div>
@@ -291,6 +274,13 @@ function _renderCategoriesSettings(categories) {
       </div>
       <button class="btn btn-primary btn-sm" id="btn-save-category">Save Category</button>
       <button class="btn btn-ghost btn-sm" id="btn-cancel-category">Cancel</button>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Bank Category Mappings</div>
+      <p class="text-muted" style="font-size:12px;margin-bottom:12px">
+        Rename bank-provided categories to your preferred names. Changes are remembered for future imports.
+      </p>
+      <div id="mapping-list">${mappingRows}</div>
     </div>
     <div class="settings-section">
       <div class="settings-section-title">Importance Levels</div>
@@ -441,5 +431,24 @@ function _wireCategorySettings() {
   document.getElementById('btn-cancel-category')?.addEventListener('click', () => {
     document.getElementById('cat-id').value = '';
     document.getElementById('cat-name').value = '';
+  });
+
+  // Wire up bank category mapping deletion
+  document.getElementById('mapping-list')?.addEventListener('click', async e => {
+    const deleteBtn = e.target.closest('.btn-delete-mapping');
+    if (!deleteBtn || !_settingsUid) return;
+
+    const bankCat = deleteBtn.dataset.bankCat;
+    if (!confirm(`Delete mapping for bank category "${bankCat}"?`)) return;
+
+    await deleteCategoryMapping(_settingsUid, bankCat);
+    delete _settingsMappings[bankCat];
+    deleteBtn.closest('.category-row').remove();
+
+    if (!Object.keys(_settingsMappings).length) {
+      document.getElementById('mapping-list').innerHTML =
+        '<div class="text-muted" style="font-size:13px;padding:4px 0">No bank category remappings yet. Import transactions to see bank categories.</div>';
+    }
+    showToast('Bank category mapping deleted', 'info');
   });
 }

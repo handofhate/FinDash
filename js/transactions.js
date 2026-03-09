@@ -5,14 +5,6 @@ let _showHidden    = false; // toggle to show/hide hidden transactions
 let _categoryDefs  = [];   // cached category definitions
 let _pendingCategorySuggestions = [];
 let _activeEditSuggestionKey = '';
-let _lastImportAiMeta = {
-  mode: 'off',
-  status: 'disabled',
-  assigned: 0,
-  predicted: 0,
-  considered: 0,
-  error: '',
-};
 
 // ─── CSV Parsing ──────────────────────────────────────────────────────────────
 function parseTransactionCSV(file) {
@@ -84,45 +76,6 @@ function postingDateToYearMonth(dateStr) {
 }
 
 // ─── Auto-Assignment Logic ────────────────────────────────────────────────────
-const _DESC_STOPWORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'for', 'to', 'of', 'at', 'on', 'in', 'with',
-  'payment', 'online', 'purchase', 'pos', 'debit', 'card', 'visa', 'mastercard',
-]);
-
-const _KEYWORD_RULES = [
-  { words: ['grocery', 'grocer', 'market', 'supermarket', 'aldi', 'kroger', 'publix', 'walmart'], category: 'Food & Dining', importance: 'Essential' },
-  { words: ['restaurant', 'cafe', 'coffee', 'starbucks', 'mcdonald', 'chipotle', 'doordash', 'uber eats'], category: 'Food & Dining', importance: 'Optional' },
-  { words: ['uber', 'lyft', 'shell', 'chevron', 'exxon', 'fuel', 'gas', 'parking', 'toll'], category: 'Transportation', importance: 'Important' },
-  { words: ['netflix', 'spotify', 'hulu', 'disney', 'max', 'youtube'], category: 'Entertainment', importance: 'Optional' },
-  { words: ['rent', 'mortgage', 'hoa'], category: 'Housing', importance: 'Essential' },
-  { words: ['electric', 'water', 'sewer', 'utility', 'internet', 'xfinity', 'comcast', 'att', 'verizon', 'tmobile'], category: 'Utilities', importance: 'Essential' },
-  { words: ['insurance', 'geico', 'progressive', 'allstate'], category: 'Insurance', importance: 'Essential' },
-  { words: ['pharmacy', 'walgreens', 'cvs', 'hospital', 'clinic', 'medical', 'dental'], category: 'Health', importance: 'Essential' },
-  { words: ['amazon', 'target', 'bestbuy', 'store'], category: 'Shopping', importance: 'Optional' },
-];
-
-function _tokenizeDesc(str) {
-  return _normalizeDesc(str)
-    .split(' ')
-    .filter(t => t.length > 1 && !_DESC_STOPWORDS.has(t));
-}
-
-function _jaccardSimilarity(aTokens, bTokens) {
-  if (!aTokens.length || !bTokens.length) return 0;
-  const a = new Set(aTokens);
-  const b = new Set(bTokens);
-  let inter = 0;
-  a.forEach(t => { if (b.has(t)) inter++; });
-  const union = new Set([...a, ...b]).size;
-  return union ? inter / union : 0;
-}
-
-function _amountSimilarity(a, b) {
-  if (!a || !b) return 0.5;
-  const max = Math.max(a, b);
-  const ratio = max ? Math.abs(a - b) / max : 1;
-  return Math.max(0, 1 - ratio);
-}
 
 function _importanceFromCategoryName(category) {
   const c = String(category || '').toLowerCase();
@@ -140,266 +93,75 @@ function _parseBankCategory(raw) {
   return parts[0] || txt;
 }
 
-function _deriveRecommendation(tokens, categoryDefs, bankCategory, settings) {
-  // 1) Match against user-defined categories
-  let best = null;
-  (categoryDefs || []).forEach(def => {
-    const catTokens = _tokenizeDesc(def.name || '');
-    const catScore  = _jaccardSimilarity(tokens, catTokens);
-    if (!best || catScore > best.score) {
-      best = { score: catScore, category: def.name, source: 'defined-category', isNew: false };
-    }
-  });
-  // Require stronger semantic overlap before auto-mapping to an existing category.
-  // Lower thresholds were collapsing too many distinct categories into one bucket.
-  if (best && best.score >= 0.58) {
-    return {
-      category: best.category,
-      importance: _importanceFromCategoryName(best.category),
-      source: best.source,
-      isNew: false,
-    };
-  }
-
-  // 2) Keyword-based inference (may suggest new categories)
-  if (settings?.matchKeywordRules !== false) {
-    for (const rule of _KEYWORD_RULES) {
-      if (rule.words.some(w => tokens.some(t => t.includes(w) || w.includes(t)))) {
-        const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === rule.category.toLowerCase());
-        return {
-          category: rule.category,
-          importance: rule.importance,
-          source: 'keyword',
-          isNew: !exists,
-        };
-      }
-    }
-  }
-
-  // 3) Fall back to bank-provided category if available
-  if (settings?.matchBankCategory !== false) {
-    const parsedCategory = _parseBankCategory(bankCategory);
-    if (parsedCategory) {
-      const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === parsedCategory.toLowerCase());
-      return {
-        category: parsedCategory,
-        importance: _importanceFromCategoryName(parsedCategory),
-        source: 'bank-category',
-        isNew: !exists,
-      };
-    }
-  }
-
-  return null;
-}
-
 async function autoAssignCategories(uid, rows) {
-  // Build pattern map from existing categorized transactions
+  // Build pattern map from existing categorized transactions (learned from manual edits)
   const existing = await getAllTransactions(uid);
-  const categoryDefs = await getCategoryDefinitions(uid);
-  const settings = getSettings();
-  _lastImportAiMeta = {
-    mode: settings.aiLocalMode ? 'local' : 'off',
-    status: settings.aiLocalMode ? 'enabled' : 'disabled',
-    assigned: 0,
-    predicted: 0,
-    considered: rows.length,
-    error: '',
-  };
-  const patternMap = {};  // normalized description → { category, importance, count, avgAmount, tokens }
+  const categoryMappings = await getCategoryMappings(uid);
+  
+  const patternMap = {};  // normalized description → { category, importance, count }
 
   existing.forEach(tx => {
     if (!tx.category) return;
     const key = _normalizeDesc(tx.description);
     if (!key) return;
     if (!patternMap[key]) {
-      patternMap[key] = {
-        category: tx.category,
-        importance: tx.importance || '',
-        count: 0,
-        avgAmount: 0,
-        tokens: _tokenizeDesc(tx.description),
-      };
+      patternMap[key] = { category: tx.category, importance: tx.importance || '', count: 0 };
     }
-    patternMap[key].avgAmount = ((patternMap[key].avgAmount * patternMap[key].count) + (tx.amount || 0)) / (patternMap[key].count + 1);
     patternMap[key].count++;
   });
 
-  const learnedPatterns = Object.entries(patternMap).map(([key, p]) => ({ key, ...p }));
-
-  // Optional local AI pass (Transformers.js) for rows that do not hit history-based matches.
-  const aiPredByTxId = new Map();
-  if (settings.aiLocalMode && categoryDefs.length < 2) {
-    _lastImportAiMeta.status = 'unavailable';
-    _lastImportAiMeta.error = 'Need at least 2 categories in Settings for Local AI classification';
-  } else if (settings.aiLocalMode && window.LocalAI?.suggestRows) {
-    const before = window.LocalAI?.getStatus?.();
-    if (before?.state === 'loading') _lastImportAiMeta.status = 'loading';
-    try {
-      const aiPredictions = await window.LocalAI.suggestRows(rows, categoryDefs, { threshold: 0.4, maxRows: 250 });
-      aiPredictions.forEach(p => aiPredByTxId.set(p.txId, p));
-      _lastImportAiMeta.predicted = aiPredictions.length;
-      const after = window.LocalAI?.getStatus?.();
-      _lastImportAiMeta.status = after?.state === 'ready' ? 'ready' : 'enabled';
-    } catch {
-      // Fallback to deterministic logic if AI model is unavailable.
-      _lastImportAiMeta.status = 'fallback';
-      _lastImportAiMeta.error = 'Model unavailable';
-    }
-  } else if (settings.aiLocalMode) {
-    _lastImportAiMeta.status = 'unavailable';
-    _lastImportAiMeta.error = 'Local AI module not loaded';
-  }
-
   // Apply to new rows
   rows.forEach(row => {
-    const desc = String(row.description || '');
     const key = _normalizeDesc(row.description);
-    const tokens = _tokenizeDesc(desc);
 
-    // 1) Exact learned match from prior transactions
-    if (settings.matchExactHistory !== false && key && patternMap[key] && patternMap[key].count >= 1) {
-      row.category    = patternMap[key].category;
-      row.importance  = patternMap[key].importance || _importanceFromCategoryName(patternMap[key].category);
-      row._autoAssignedBy = 'exact-history';
-      row._autoAssignedConfidence = 0.98;
+    // 1) Check learned patterns (exact match from user's previous manual assignments)
+    if (key && patternMap[key]) {
+      row.category   = patternMap[key].category;
+      row.importance = patternMap[key].importance || _importanceFromCategoryName(patternMap[key].category);
+      row._autoAssignedBy = 'learned-history';
       return;
     }
 
-    // 2) Local AI suggestion (when enabled)
-    const ai = aiPredByTxId.get(row.txId);
-    if (ai?.category) {
-      row.category = ai.category;
-      row._categoryRecommendation = ai.category;
-      row._importanceRecommendation = _importanceFromCategoryName(ai.category);
-      row._recommendationSource = 'local-ai';
-      row._suggestedNewCategory = !(categoryDefs || []).some(c => String(c.name || '').toLowerCase() === String(ai.category).toLowerCase());
-      row.importance = row.importance || _importanceFromCategoryName(ai.category);
-      row._autoAssignedBy = 'local-ai';
-      row._autoAssignedConfidence = Math.round((ai.score || 0) * 100) / 100;
+    // 2) Apply bank category mapping if it exists
+    const bankCat = row.rawCategory || row.category;
+    if (bankCat && categoryMappings[bankCat]) {
+      row.category = categoryMappings[bankCat];
+      row.importance = row.importance || _importanceFromCategoryName(row.category);
+      row._autoAssignedBy = 'bank-mapping';
       return;
     }
 
-    // 3) Fuzzy learned match
-    if (settings.matchFuzzyHistory !== false) {
-      let best = null;
-      learnedPatterns.forEach(p => {
-        const tokenScore = _jaccardSimilarity(tokens, p.tokens || []);
-        if (tokenScore < 0.2) return;
-        const amountScore = _amountSimilarity(row.amount || 0, p.avgAmount || 0);
-        const countScore  = Math.min(p.count / 4, 1);
-        const score = tokenScore * 0.72 + amountScore * 0.18 + countScore * 0.10;
-        if (!best || score > best.score) best = { score, pattern: p };
-      });
-
-      if (best && best.score >= 0.62) {
-        row.category    = best.pattern.category;
-        row.importance  = best.pattern.importance || _importanceFromCategoryName(best.pattern.category);
-        row._autoAssignedBy = 'fuzzy-history';
-        row._autoAssignedConfidence = Math.round(best.score * 100) / 100;
-        return;
-      }
-    }
-
-    // 4) Recommendation path (defined categories, keyword inference, bank category)
-    const recommendation = _deriveRecommendation(tokens, categoryDefs, row.category, settings);
-    if (recommendation) {
-      row._categoryRecommendation = recommendation.category;
-      row._importanceRecommendation = recommendation.importance || '';
-      row._recommendationSource = recommendation.source;
-      row._suggestedNewCategory = !!recommendation.isNew;
-
-      // Prefer recommendation category over noisy bank labels for import automation.
-      row.category = recommendation.category;
-      if (!row.importance && recommendation.importance) row.importance = recommendation.importance;
-      return;
-    }
-
-    // 5) Final fallback: if a category exists but importance is blank, infer importance.
-    if (row.category && !row.importance) {
-      row.importance = _importanceFromCategoryName(row.category);
+    // 3) Use bank category as-is
+    if (row.category) {
+      row.importance = row.importance || _importanceFromCategoryName(row.category);
+      row._autoAssignedBy = 'bank-category';
     }
   });
-
-  _lastImportAiMeta.assigned = rows.filter(r => r._autoAssignedBy === 'local-ai').length;
-}
-
-function _renderImportAiStatus() {
-  const meta = _lastImportAiMeta || {};
-  const mode = meta.mode === 'local' ? 'Local AI' : 'AI';
-  const assigned = Number.isFinite(meta.assigned) ? meta.assigned : 0;
-  const predicted = Number.isFinite(meta.predicted) ? meta.predicted : 0;
-  const details = meta.mode === 'local' ? ` (${assigned} assigned / ${predicted} predicted)` : '';
-
-  if (meta.mode !== 'local') {
-    return `<span class="import-ai-status is-off">${mode}: off</span>`;
-  }
-
-  const labelByStatus = {
-    enabled: 'enabled',
-    loading: 'loading model',
-    ready: 'ready',
-    fallback: 'fallback to rules',
-    unavailable: 'unavailable',
-    disabled: 'off',
-  };
-  const clsByStatus = {
-    enabled: 'is-loading',
-    loading: 'is-loading',
-    ready: 'is-ready',
-    fallback: 'is-fallback',
-    unavailable: 'is-fallback',
-    disabled: 'is-off',
-  };
-
-  const status = labelByStatus[meta.status] || 'enabled';
-  const cls = clsByStatus[meta.status] || 'is-loading';
-  const title = meta.error ? ` title="${esc(meta.error)}"` : '';
-  return `<span class="import-ai-status ${cls}"${title}>${mode}: ${status}${details}</span>`;
 }
 
 function _collectCategorySuggestions(rows, categoryDefs) {
   const existingNames = new Set((categoryDefs || []).map(c => String(c.name || '').toLowerCase()));
   const suggestions = new Map();
 
-  function addSuggestion(name, source) {
+  function addSuggestion(name) {
     const cleaned = String(name || '').trim();
     if (!cleaned) return;
     const key = cleaned.toLowerCase();
     if (existingNames.has(key)) return;
 
     if (!suggestions.has(key)) {
-      suggestions.set(key, {
-        key,
-        name: cleaned,
-        sources: new Set(),
-        count: 0,
-      });
+      suggestions.set(key, { key, name: cleaned, count: 0 });
     }
-
-    const item = suggestions.get(key);
-    if (source) item.sources.add(String(source));
-    item.count += 1;
+    suggestions.get(key).count += 1;
   }
 
   rows.forEach(r => {
-    addSuggestion(r._categoryRecommendation, r._recommendationSource || 'rules');
-
-    // Also suggest unseen bank labels when they differ from the mapped category.
-    const raw = String(r.rawCategory || '').trim();
-    const mapped = String(r._categoryRecommendation || r.category || '').trim();
-    if (raw && raw.toLowerCase() !== mapped.toLowerCase()) {
-      const parsed = _parseBankCategory(raw);
-      addSuggestion(parsed || raw, 'bank-raw');
-    }
+    // Suggest bank categories that haven't been accepted yet
+    const bankCat = _parseBankCategory(r.rawCategory || r.category);
+    if (bankCat) addSuggestion(bankCat);
   });
 
-  return [...suggestions.values()].map(s => ({
-    key: s.key,
-    name: s.name,
-    source: [...s.sources].join(', '),
-    count: s.count,
-  }));
+  return [...suggestions.values()];
 }
 
 function _refreshPendingSuggestions() {
@@ -412,51 +174,22 @@ function _dedupePendingCategorySuggestions() {
     const key = String(s.name || '').toLowerCase();
     if (!key) return;
     if (!merged.has(key)) {
-      merged.set(key, {
-        key,
-        name: s.name,
-        sources: new Set(String(s.source || '').split(',').map(x => x.trim()).filter(Boolean)),
-        count: s.count || 0,
-      });
+      merged.set(key, { key, name: s.name, count: s.count || 0 });
       return;
     }
-    const tgt = merged.get(key);
-    String(s.source || '').split(',').map(x => x.trim()).filter(Boolean).forEach(src => tgt.sources.add(src));
-    tgt.count += (s.count || 0);
+    merged.get(key).count += (s.count || 0);
   });
 
-  _pendingCategorySuggestions = [...merged.values()].map(v => ({
-    key: v.key,
-    name: v.name,
-    source: [...v.sources].join(', '),
-    count: v.count,
-  }));
+  _pendingCategorySuggestions = [...merged.values()];
 }
 
 function _applyAcceptedCategoryToPendingRows(oldCategoryName, nextCategoryName) {
   const oldKey = String(oldCategoryName || '').toLowerCase();
   _pendingImport = _pendingImport.map(r => {
-    const recKey = String(r._categoryRecommendation || '').toLowerCase();
-    if (recKey !== oldKey) return r;
-    return {
-      ...r,
-      category: nextCategoryName,
-      _categoryRecommendation: nextCategoryName,
-    };
+    const catKey = String(r.category || '').toLowerCase();
+    if (catKey !== oldKey) return r;
+    return { ...r, category: nextCategoryName };
   });
-}
-
-function _hasLocalAiSource(source) {
-  return String(source || '').toLowerCase().split(',').map(s => s.trim()).includes('local-ai');
-}
-
-function _sourcePillsHtml(source) {
-  const items = String(source || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (!items.length) return '';
-  return items.map(src => {
-    if (src === 'local-ai') return '<span class="badge badge-ai" title="Suggested by Local AI">AI</span>';
-    return `<span class="badge badge-autopay" title="Suggestion source">${esc(src)}</span>`;
-  }).join(' ');
 }
 
 function _renderImportSuggestionPanels() {
@@ -475,12 +208,12 @@ function _renderImportSuggestionPanels() {
     const list = _pendingCategorySuggestions.map(s => `
       <div class="import-sugg-row" data-kind="category-suggestion" data-key="${esc(s.key)}" draggable="true" title="Drag onto another category suggestion to merge">
         <div>
-          <strong>${esc(s.name)}</strong> ${_hasLocalAiSource(s.source) ? '<span class="badge badge-ai" title="Suggested by Local AI">AI</span>' : ''}
-          <div class="text-muted" style="font-size:11px">${s.count} transaction(s), source: ${_sourcePillsHtml(s.source)}</div>
+          <strong>${esc(s.name)}</strong>
+          <div class="text-muted" style="font-size:11px">${s.count} transaction(s)</div>
         </div>
         <div class="import-sugg-actions">
           <button class="btn btn-primary btn-sm btn-accept-category-suggestion" data-key="${esc(s.key)}">Accept</button>
-          <button class="btn btn-ghost btn-sm btn-edit-category-suggestion" data-key="${esc(s.key)}">Edit</button>
+          <button class="btn btn-ghost btn-sm btn-edit-category-suggestion" data-key="${esc(s.key)}">Rename</button>
           <button class="btn btn-ghost btn-sm btn-merge-category-suggestion" data-key="${esc(s.key)}">Merge</button>
           <button class="btn btn-ghost btn-sm btn-decline-category-suggestion" data-key="${esc(s.key)}">Decline</button>
         </div>
@@ -490,8 +223,8 @@ function _renderImportSuggestionPanels() {
     catPanel.innerHTML = `
       <div class="import-sugg-header">
         <div>
-          <strong>Suggested New Categories</strong>
-          <div class="text-muted" style="font-size:12px">Accept, edit, merge, or drag one suggestion onto another to merge.</div>
+          <strong>Bank Categories</strong>
+          <div class="text-muted" style="font-size:12px">Accept as-is, rename, merge similar ones, or decline. Changes are remembered for future imports.</div>
         </div>
         <div class="import-sugg-toolbar">
           <button class="btn btn-primary btn-sm" id="btn-accept-all-category-suggestions">Accept All</button>
@@ -680,7 +413,6 @@ async function handleCSVFile(file, uid) {
     if (skipped.length)  statsHTML += ` · <span class="text-muted">${skipped.length} auto-skipped by filters</span>`;
     if (flagged.length)  statsHTML += ` · <span style="color:var(--yellow)">${flagged.length} flagged for review</span>`;
     statsHTML += ` · ${dateRange}`;
-    statsHTML += ` · ${_renderImportAiStatus()}`;
     stats.innerHTML = statsHTML;
 
     const wrap = document.getElementById('import-preview-table-wrap');

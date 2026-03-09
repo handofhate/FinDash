@@ -7,6 +7,7 @@ const billsCol      = uid => db.collection('users').doc(uid).collection('bills')
 const txCol         = uid => db.collection('users').doc(uid).collection('transactions');
 const accountsCol   = uid => db.collection('users').doc(uid).collection('accounts');
 const categoriesCol = uid => db.collection('users').doc(uid).collection('categories');
+const categoryMappingsCol = uid => db.collection('users').doc(uid).collection('categoryMappings');
 
 // ─── Accounts ─────────────────────────────────────────────────────────────────
 async function getAccounts(uid) {
@@ -167,6 +168,34 @@ async function deleteCategoryDefinition(uid, categoryId) {
 async function deleteAllCategoryDefinitions(uid) {
   const snap = await categoriesCol(uid).get();
   return _batchDelete(snap.docs);
+}
+
+// ─── Bank Category Mappings ───────────────────────────────────────────────────
+async function getCategoryMappings(uid) {
+  const snap = await categoryMappingsCol(uid).get();
+  const mappings = {};
+  snap.docs.forEach(d => {
+    const data = d.data();
+    if (data.bankCategory && data.mappedCategory) {
+      mappings[data.bankCategory] = data.mappedCategory;
+    }
+  });
+  return mappings;
+}
+
+async function saveCategoryMapping(uid, bankCategory, mappedCategory) {
+  // Use bankCategory as document ID for easy lookup
+  const docId = String(bankCategory).toLowerCase().replace(/[^a-z0-9]/g, '_');
+  await categoryMappingsCol(uid).doc(docId).set({
+    bankCategory,
+    mappedCategory,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+async function deleteCategoryMapping(uid, bankCategory) {
+  const docId = String(bankCategory).toLowerCase().replace(/[^a-z0-9]/g, '_');
+  await categoryMappingsCol(uid).doc(docId).delete();
 }
 
 // ─── Import Filters ───────────────────────────────────────────────────────────
