@@ -196,6 +196,15 @@ document.getElementById('tx-category').addEventListener('change', async () => {
   if (uid) await loadAndRenderTxList(uid);
 });
 
+let _txSearchDebounce = null;
+document.getElementById('tx-search').addEventListener('input', async () => {
+  clearTimeout(_txSearchDebounce);
+  _txSearchDebounce = setTimeout(async () => {
+    const uid = auth.currentUser?.uid;
+    if (uid) await loadAndRenderTxList(uid);
+  }, 180);
+});
+
 document.getElementById('btn-show-hidden').addEventListener('click', async () => {
   _showHidden = !_showHidden;
   const uid = auth.currentUser?.uid;

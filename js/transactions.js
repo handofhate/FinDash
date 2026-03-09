@@ -26,6 +26,55 @@ function getTxEditContext() {
   };
 }
 
+function _tokenizeTxSearch(query) {
+  const tokens = [];
+  const re = /"([^"]+)"|(\S+)/g;
+  let m;
+  while ((m = re.exec(String(query || ''))) !== null) {
+    const token = (m[1] || m[2] || '').trim();
+    if (token) tokens.push(token);
+  }
+  return tokens;
+}
+
+function _parseAmountToken(token) {
+  const m = String(token || '').match(/^(<=|>=|<|>|=)\$?(\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  return { op: m[1], value: Number(m[2]) };
+}
+
+function _amountMatches(op, left, right) {
+  if (op === '<') return left < right;
+  if (op === '<=') return left <= right;
+  if (op === '>') return left > right;
+  if (op === '>=') return left >= right;
+  return left === right;
+}
+
+function _matchesTxSearch(tx, query) {
+  const q = String(query || '').trim();
+  if (!q) return true;
+
+  const tokens = _tokenizeTxSearch(q).map(t => t.toLowerCase());
+  if (!tokens.length) return true;
+
+  const amount = Number(tx.amount || 0);
+  const haystack = [
+    tx.description,
+    tx.category,
+    tx.accountName,
+    tx.type,
+    String(tx.amount ?? ''),
+    amount.toFixed(2),
+  ].map(v => String(v || '').toLowerCase()).join(' ');
+
+  return tokens.every(token => {
+    const amt = _parseAmountToken(token);
+    if (amt) return _amountMatches(amt.op, amount, amt.value);
+    return haystack.includes(token);
+  });
+}
+
 function _sortTransactions(txns) {
   const key = _txSort.key || 'col_date';
   const dir = _txSort.dir === 'asc' ? 1 : -1;
@@ -380,6 +429,7 @@ async function loadAndRenderTxList(uid) {
   const yearMonth = document.getElementById('tx-month').value;
   const category  = document.getElementById('tx-category').value;
   const accountId = document.getElementById('tx-account').value;
+  const search    = document.getElementById('tx-search')?.value || '';
   const s         = getSettings();
 
   let txns = [];
@@ -389,6 +439,7 @@ async function loadAndRenderTxList(uid) {
     if (yearMonth) txns = txns.filter(t => String(t.yearMonth || '').trim() === String(yearMonth).trim());
     if (category) txns = txns.filter(t => String(t.category || '').trim() === String(category).trim());
     if (accountId) txns = txns.filter(t => String(t.accountId || '').trim() === String(accountId).trim());
+    if (search.trim()) txns = txns.filter(t => _matchesTxSearch(t, search));
     if (s.hideZeroTx) txns = txns.filter(t => t.amount !== 0);
   } catch (err) {
     showToast('Unable to load transactions: ' + err.message, 'error');

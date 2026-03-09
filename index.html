@@ -113,6 +113,18 @@
           <select id="tx-category">
             <option value="">All Categories</option>
           </select>
+          <label for="tx-search">Search:</label>
+          <input type="search" id="tx-search" placeholder="Walmart Ty <20" />
+          <span class="tx-search-help" aria-label="Search help">
+            <button type="button" class="tx-search-help-icon" aria-label="Show search help">i</button>
+            <span class="tx-search-tooltip" role="tooltip">
+              Search tips:
+              <br>1. Plain text searches description, category, account, type, amount text.
+              <br>2. Use amount operators: &lt;20, &lt;=20, &gt;50, &gt;=50, =12.34.
+              <br>3. Multiple terms are ANDed: Walmart Ty &lt;20.
+              <br>4. Use quotes for phrases: "walmart supercenter".
+            </span>
+          </span>
         </div>
         <div class="toolbar-right">
           <button id="btn-show-hidden" class="btn btn-ghost btn-sm">Show Hidden</button>
