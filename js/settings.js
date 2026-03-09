@@ -18,6 +18,10 @@ const SETTING_DEFAULTS = {
   compactRows:  false,
   hideZeroTx:   false,
   aiLocalMode:  false,
+  matchExactHistory:  true,
+  matchFuzzyHistory:  true,
+  matchKeywordRules:  true,
+  matchBankCategory:  true,
   col_date:        true,
   col_description: true,
   col_category:    true,
@@ -175,6 +179,28 @@ function _renderDisplaySettings(s) {
       </label>
       <p class="text-muted" style="font-size:12px;margin-top:4px">
         First use downloads a model in your browser cache. Slower on older devices.
+      </p>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Import Matching</div>
+      <label class="settings-toggle-row">
+        <input type="checkbox" data-setting="matchExactHistory" ${s.matchExactHistory !== false ? 'checked' : ''}>
+        <span>Exact history matching</span>
+      </label>
+      <label class="settings-toggle-row">
+        <input type="checkbox" data-setting="matchFuzzyHistory" ${s.matchFuzzyHistory !== false ? 'checked' : ''}>
+        <span>Fuzzy history matching</span>
+      </label>
+      <label class="settings-toggle-row">
+        <input type="checkbox" data-setting="matchKeywordRules" ${s.matchKeywordRules !== false ? 'checked' : ''}>
+        <span>Keyword rules</span>
+      </label>
+      <label class="settings-toggle-row">
+        <input type="checkbox" data-setting="matchBankCategory" ${s.matchBankCategory !== false ? 'checked' : ''}>
+        <span>Bank category fallback</span>
+      </label>
+      <p class="text-muted" style="font-size:12px;margin-top:4px">
+        Toggle off all except AI to test AI predictions in isolation.
       </p>
     </div>
     <div class="settings-section">

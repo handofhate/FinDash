@@ -140,7 +140,7 @@ function _parseBankCategory(raw) {
   return parts[0] || txt;
 }
 
-function _deriveRecommendation(tokens, categoryDefs, bankCategory) {
+function _deriveRecommendation(tokens, categoryDefs, bankCategory, settings) {
   // 1) Match against user-defined categories
   let best = null;
   (categoryDefs || []).forEach(def => {
@@ -162,28 +162,32 @@ function _deriveRecommendation(tokens, categoryDefs, bankCategory) {
   }
 
   // 2) Keyword-based inference (may suggest new categories)
-  for (const rule of _KEYWORD_RULES) {
-    if (rule.words.some(w => tokens.some(t => t.includes(w) || w.includes(t)))) {
-      const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === rule.category.toLowerCase());
-      return {
-        category: rule.category,
-        importance: rule.importance,
-        source: 'keyword',
-        isNew: !exists,
-      };
+  if (settings?.matchKeywordRules !== false) {
+    for (const rule of _KEYWORD_RULES) {
+      if (rule.words.some(w => tokens.some(t => t.includes(w) || w.includes(t)))) {
+        const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === rule.category.toLowerCase());
+        return {
+          category: rule.category,
+          importance: rule.importance,
+          source: 'keyword',
+          isNew: !exists,
+        };
+      }
     }
   }
 
   // 3) Fall back to bank-provided category if available
-  const parsedCategory = _parseBankCategory(bankCategory);
-  if (parsedCategory) {
-    const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === parsedCategory.toLowerCase());
-    return {
-      category: parsedCategory,
-      importance: _importanceFromCategoryName(parsedCategory),
-      source: 'bank-category',
-      isNew: !exists,
-    };
+  if (settings?.matchBankCategory !== false) {
+    const parsedCategory = _parseBankCategory(bankCategory);
+    if (parsedCategory) {
+      const exists = (categoryDefs || []).some(d => String(d.name || '').toLowerCase() === parsedCategory.toLowerCase());
+      return {
+        category: parsedCategory,
+        importance: _importanceFromCategoryName(parsedCategory),
+        source: 'bank-category',
+        isNew: !exists,
+      };
+    }
   }
 
   return null;
@@ -254,7 +258,7 @@ async function autoAssignCategories(uid, rows) {
     const tokens = _tokenizeDesc(desc);
 
     // 1) Exact learned match from prior transactions
-    if (key && patternMap[key] && patternMap[key].count >= 1) {
+    if (settings.matchExactHistory !== false && key && patternMap[key] && patternMap[key].count >= 1) {
       row.category    = patternMap[key].category;
       row.importance  = patternMap[key].importance || _importanceFromCategoryName(patternMap[key].category);
       row._autoAssignedBy = 'exact-history';
@@ -277,26 +281,28 @@ async function autoAssignCategories(uid, rows) {
     }
 
     // 3) Fuzzy learned match
-    let best = null;
-    learnedPatterns.forEach(p => {
-      const tokenScore = _jaccardSimilarity(tokens, p.tokens || []);
-      if (tokenScore < 0.2) return;
-      const amountScore = _amountSimilarity(row.amount || 0, p.avgAmount || 0);
-      const countScore  = Math.min(p.count / 4, 1);
-      const score = tokenScore * 0.72 + amountScore * 0.18 + countScore * 0.10;
-      if (!best || score > best.score) best = { score, pattern: p };
-    });
+    if (settings.matchFuzzyHistory !== false) {
+      let best = null;
+      learnedPatterns.forEach(p => {
+        const tokenScore = _jaccardSimilarity(tokens, p.tokens || []);
+        if (tokenScore < 0.2) return;
+        const amountScore = _amountSimilarity(row.amount || 0, p.avgAmount || 0);
+        const countScore  = Math.min(p.count / 4, 1);
+        const score = tokenScore * 0.72 + amountScore * 0.18 + countScore * 0.10;
+        if (!best || score > best.score) best = { score, pattern: p };
+      });
 
-    if (best && best.score >= 0.62) {
-      row.category    = best.pattern.category;
-      row.importance  = best.pattern.importance || _importanceFromCategoryName(best.pattern.category);
-      row._autoAssignedBy = 'fuzzy-history';
-      row._autoAssignedConfidence = Math.round(best.score * 100) / 100;
-      return;
+      if (best && best.score >= 0.62) {
+        row.category    = best.pattern.category;
+        row.importance  = best.pattern.importance || _importanceFromCategoryName(best.pattern.category);
+        row._autoAssignedBy = 'fuzzy-history';
+        row._autoAssignedConfidence = Math.round(best.score * 100) / 100;
+        return;
+      }
     }
 
     // 4) Recommendation path (defined categories, keyword inference, bank category)
-    const recommendation = _deriveRecommendation(tokens, categoryDefs, row.category);
+    const recommendation = _deriveRecommendation(tokens, categoryDefs, row.category, settings);
     if (recommendation) {
       row._categoryRecommendation = recommendation.category;
       row._importanceRecommendation = recommendation.importance || '';
