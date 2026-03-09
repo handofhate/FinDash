@@ -9,6 +9,7 @@ let _lastImportAiMeta = {
   mode: 'off',
   status: 'disabled',
   assigned: 0,
+  predicted: 0,
   considered: 0,
   error: '',
 };
@@ -197,6 +198,7 @@ async function autoAssignCategories(uid, rows) {
     mode: settings.aiLocalMode ? 'local' : 'off',
     status: settings.aiLocalMode ? 'enabled' : 'disabled',
     assigned: 0,
+    predicted: 0,
     considered: rows.length,
     error: '',
   };
@@ -223,12 +225,16 @@ async function autoAssignCategories(uid, rows) {
 
   // Optional local AI pass (Transformers.js) for rows that do not hit history-based matches.
   const aiPredByTxId = new Map();
-  if (settings.aiLocalMode && window.LocalAI?.suggestRows) {
+  if (settings.aiLocalMode && categoryDefs.length < 2) {
+    _lastImportAiMeta.status = 'unavailable';
+    _lastImportAiMeta.error = 'Need at least 2 categories in Settings for Local AI classification';
+  } else if (settings.aiLocalMode && window.LocalAI?.suggestRows) {
     const before = window.LocalAI?.getStatus?.();
     if (before?.state === 'loading') _lastImportAiMeta.status = 'loading';
     try {
-      const aiPredictions = await window.LocalAI.suggestRows(rows, categoryDefs, { threshold: 0.52, maxRows: 150 });
+      const aiPredictions = await window.LocalAI.suggestRows(rows, categoryDefs, { threshold: 0.4, maxRows: 250 });
       aiPredictions.forEach(p => aiPredByTxId.set(p.txId, p));
+      _lastImportAiMeta.predicted = aiPredictions.length;
       const after = window.LocalAI?.getStatus?.();
       _lastImportAiMeta.status = after?.state === 'ready' ? 'ready' : 'enabled';
     } catch {
@@ -256,7 +262,21 @@ async function autoAssignCategories(uid, rows) {
       return;
     }
 
-    // 2) Fuzzy learned match
+    // 2) Local AI suggestion (when enabled)
+    const ai = aiPredByTxId.get(row.txId);
+    if (ai?.category) {
+      row.category = ai.category;
+      row._categoryRecommendation = ai.category;
+      row._importanceRecommendation = _importanceFromCategoryName(ai.category);
+      row._recommendationSource = 'local-ai';
+      row._suggestedNewCategory = !(categoryDefs || []).some(c => String(c.name || '').toLowerCase() === String(ai.category).toLowerCase());
+      row.importance = row.importance || _importanceFromCategoryName(ai.category);
+      row._autoAssignedBy = 'local-ai';
+      row._autoAssignedConfidence = Math.round((ai.score || 0) * 100) / 100;
+      return;
+    }
+
+    // 3) Fuzzy learned match
     let best = null;
     learnedPatterns.forEach(p => {
       const tokenScore = _jaccardSimilarity(tokens, p.tokens || []);
@@ -275,21 +295,7 @@ async function autoAssignCategories(uid, rows) {
       return;
     }
 
-    // 2.5) Local AI suggestion (when enabled)
-    const ai = aiPredByTxId.get(row.txId);
-    if (ai?.category) {
-      row.category = ai.category;
-      row._categoryRecommendation = ai.category;
-      row._importanceRecommendation = _importanceFromCategoryName(ai.category);
-      row._recommendationSource = 'local-ai';
-      row._suggestedNewCategory = !(categoryDefs || []).some(c => String(c.name || '').toLowerCase() === String(ai.category).toLowerCase());
-      row.importance = row.importance || _importanceFromCategoryName(ai.category);
-      row._autoAssignedBy = 'local-ai';
-      row._autoAssignedConfidence = Math.round((ai.score || 0) * 100) / 100;
-      return;
-    }
-
-    // 3) Recommendation path (defined categories, keyword inference, bank category)
+    // 4) Recommendation path (defined categories, keyword inference, bank category)
     const recommendation = _deriveRecommendation(tokens, categoryDefs, row.category);
     if (recommendation) {
       row._categoryRecommendation = recommendation.category;
@@ -303,7 +309,7 @@ async function autoAssignCategories(uid, rows) {
       return;
     }
 
-    // 4) Final fallback: if a category exists but importance is blank, infer importance.
+    // 5) Final fallback: if a category exists but importance is blank, infer importance.
     if (row.category && !row.importance) {
       row.importance = _importanceFromCategoryName(row.category);
     }
@@ -316,7 +322,8 @@ function _renderImportAiStatus() {
   const meta = _lastImportAiMeta || {};
   const mode = meta.mode === 'local' ? 'Local AI' : 'AI';
   const assigned = Number.isFinite(meta.assigned) ? meta.assigned : 0;
-  const details = meta.mode === 'local' ? ` (${assigned} assigned)` : '';
+  const predicted = Number.isFinite(meta.predicted) ? meta.predicted : 0;
+  const details = meta.mode === 'local' ? ` (${assigned} assigned / ${predicted} predicted)` : '';
 
   if (meta.mode !== 'local') {
     return `<span class="import-ai-status is-off">${mode}: off</span>`;
