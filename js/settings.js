@@ -96,26 +96,30 @@ let _settingsTab       = 'display';
 let _settingsFilters   = [];
 let _settingsCategories = [];
 let _settingsMappings = {};
+let _settingsRulesets = [];
 let _settingsUid       = null;
 
 async function openSettingsModal(uid) {
   _settingsUid = uid;
   try {
     if (uid) {
-      [_settingsFilters, _settingsCategories, _settingsMappings] = await Promise.all([
+      [_settingsFilters, _settingsCategories, _settingsMappings, _settingsRulesets] = await Promise.all([
         getImportFilters(uid),
         getCategoryDefinitions(uid),
         getCategoryMappings(uid),
+        getRulesets(uid),
       ]);
     } else {
       _settingsFilters    = [];
       _settingsCategories = [];
       _settingsMappings = {};
+      _settingsRulesets = [];
     }
   } catch (err) {
     _settingsFilters    = [];
     _settingsCategories = [];
     _settingsMappings = {};
+    _settingsRulesets = [];
     showToast('Settings data failed to load. Showing defaults.', 'error');
   }
   _renderSettingsContent();
@@ -126,10 +130,12 @@ function _renderSettingsContent() {
   const s = getSettings();
   document.getElementById('settings-display-tab').innerHTML    = _renderDisplaySettings(s);
   document.getElementById('settings-categories-tab').innerHTML = _renderCategoriesSettings(_settingsCategories);
+  document.getElementById('settings-rulesets-tab').innerHTML = _renderRulesetsSettings(_settingsRulesets);
   document.getElementById('settings-filters-tab').innerHTML    = _renderFiltersSettings(_settingsFilters);
   _switchSettingsTab(_settingsTab);
   _wireDisplaySettings();
   _wireCategorySettings();
+  _wireRulesetsSettings();
   _wireFilterSettings();
 }
 
@@ -139,6 +145,7 @@ function _switchSettingsTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('settings-display-tab').classList.toggle('hidden', tab !== 'display');
   document.getElementById('settings-categories-tab').classList.toggle('hidden', tab !== 'categories');
+  document.getElementById('settings-rulesets-tab').classList.toggle('hidden', tab !== 'rulesets');
   document.getElementById('settings-filters-tab').classList.toggle('hidden', tab !== 'filters');
 }
 
@@ -298,6 +305,34 @@ function _renderCategoriesSettings(categories) {
       <p class="text-muted" style="font-size:12px">
         Hard-coded importance tags: <strong>Essential</strong>, <strong>Important</strong>, <strong>Optional</strong>, <strong>Low</strong>
       </p>
+    </div>`;
+}
+
+function _renderRulesetsSettings(rulesets) {
+  const rows = rulesets.length
+    ? rulesets.map(rs => {
+        const editsList = rs.edits && rs.edits.length
+          ? rs.edits.map(e => `<div style="font-size:12px;margin:4px 0"><strong>${e.field}:</strong> set to "${esc(e.newValue)}" when ${esc(e.matchOn)} ${esc(e.matchValue)} (${e.scope})</div>`).join('')
+          : '';
+        return `
+        <div class="ruleset-row" data-id="${rs.id}">
+          <div class="ruleset-row-content">
+            ${editsList}
+          </div>
+          <div class="ruleset-row-actions">
+            <button class="btn-icon btn-delete-ruleset" data-id="${rs.id}" title="Delete ruleset">✕</button>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="text-muted" style="font-size:13px;padding:4px 0">No transaction rulesets yet. Create one by editing a transaction and selecting "This and all other transactions".</div>';
+
+  return `
+    <div class="settings-section">
+      <div class="settings-section-title">Transaction Rulesets</div>
+      <p class="text-muted" style="font-size:12px;margin-bottom:12px">
+        Rules created when editing transactions with "This and all other transactions" scope. These rules auto-apply to future imports and existing/future matching transactions.
+      </p>
+      <div id="ruleset-list">${rows}</div>
     </div>`;
 }
 
@@ -503,5 +538,26 @@ function _wireCategorySettings() {
     document.getElementById('mapping-original-bank-cat').value = '';
     document.getElementById('mapping-bank-cat').value = '';
     document.getElementById('mapping-custom-cat').value = '';
+  });
+}
+
+function _wireRulesetsSettings() {
+  document.getElementById('ruleset-list')?.addEventListener('click', async e => {
+    const deleteBtn = e.target.closest('.btn-delete-ruleset');
+    if (!deleteBtn || !_settingsUid) return;
+
+    const rsId = deleteBtn.dataset.id;
+    const rs = _settingsRulesets.find(r => r.id === rsId);
+    if (!rs || !confirm('Delete this ruleset?')) return;
+
+    await deleteRuleset(_settingsUid, rsId);
+    _settingsRulesets = _settingsRulesets.filter(r => r.id !== rsId);
+    deleteBtn.closest('.ruleset-row').remove();
+
+    if (!_settingsRulesets.length) {
+      document.getElementById('ruleset-list').innerHTML =
+        '<div class="text-muted" style="font-size:13px;padding:4px 0">No transaction rulesets yet. Create one by editing a transaction and selecting "This and all other transactions".</div>';
+    }
+    showToast('Ruleset deleted', 'info');
   });
 }

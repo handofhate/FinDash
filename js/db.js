@@ -219,3 +219,48 @@ async function saveImportFilter(uid, filter) {
 async function deleteImportFilter(uid, filterId) {
   await filtersCol(uid).doc(filterId).delete();
 }
+
+// ─── Transaction Rulesets ─────────────────────────────────────────────────────
+const rulesetsCol = uid => db.collection('users').doc(uid).collection('transactionRulesets');
+
+async function getRulesets(uid) {
+  const snap = await rulesetsCol(uid).get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+async function saveRuleset(uid, ruleset) {
+  const { id, ...data } = ruleset;
+  const payload = {
+    ...data,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  };
+  if (id) {
+    await rulesetsCol(uid).doc(id).set(payload, { merge: true });
+    return id;
+  }
+  payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+  const ref = await rulesetsCol(uid).add(payload);
+  return ref.id;
+}
+
+async function deleteRuleset(uid, rulesetId) {
+  await rulesetsCol(uid).doc(rulesetId).delete();
+}
+
+// Find all rulesets that could conflict with a given edit
+async function findConflictingRulesets(uid, edits) {
+  const rulesets = await getRulesets(uid);
+  const conflicts = [];
+  rulesets.forEach(rs => {
+    if (!rs.edits || !Array.isArray(rs.edits)) return;
+    rs.edits.forEach(existing => {
+      edits.forEach(incoming => {
+        // Conflict if same field is edited
+        if (existing.field === incoming.field) {
+          conflicts.push(rs);
+        }
+      });
+    });
+  });
+  return conflicts;
+}

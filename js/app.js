@@ -232,37 +232,42 @@ document.getElementById('tx-list').addEventListener('change', async e => {
   }
 });
 
-// Click category cell to edit category and remember mapping for future imports.
+// Click on transaction row to open edit modal
 document.getElementById('tx-list').addEventListener('click', async e => {
-  const catBtn = e.target.closest('.tx-category-editable');
-  if (!catBtn) return;
-
   const uid = auth.currentUser?.uid;
   if (!uid) return;
 
-  const txId = catBtn.dataset.id;
-  const current = (catBtn.dataset.category || '').trim();
-  const bankCategory = (catBtn.dataset.bankCategory || '').trim();
-  const next = prompt('Edit category:', current || bankCategory || '');
-  if (next === null) return;
-
-  const value = next.trim();
-  if (!value) {
-    showToast('Category cannot be empty', 'error');
+  // Ignore clicks on buttons, selects, and action elements
+  if (e.target.closest('.btn') || e.target.closest('select') || e.target.closest('.tx-actions')) {
     return;
   }
 
-  // Keep category list in Settings up-to-date for manual organization.
-  await saveCategoryDefinition(uid, { name: value });
-  await updateTransaction(uid, txId, { category: value });
+  // Get the transaction row
+  const row = e.target.closest('tr[data-id]');
+  if (!row) return;
 
-  // Remember explicit renames from bank categories for future imports.
-  if (bankCategory) {
-    await saveCategoryMapping(uid, bankCategory, value);
-  }
+  const txId = row.dataset.id;
+  
+  // Get all transactions to find the current one
+  const s = getSettings();
+  const month = document.getElementById('tx-month').value;
+  const account = document.getElementById('tx-account').value;
+  const category = document.getElementById('tx-category').value;
 
-  await loadAndRenderTxList(uid);
-  showToast('Category updated', 'success');
+  let txs = await getTransactions(uid, { yearMonth: month });
+  if (account) txs = txs.filter(t => t.accountId === account);
+  if (category) txs = txs.filter(t => t.category === category);
+  if (!s.showHidden) txs = txs.filter(t => !t.hidden);
+
+  const tx = txs.find(t => t.id === txId);
+  if (!tx) return;
+
+  // Get categories and bills
+  const categories = await getCategoryDefinitions(uid);
+  const bills = await getBills(uid);
+
+  // Open the edit modal
+  await openTxEditModal(uid, tx, categories, bills);
 });
 
 // Show/hide "new account name" field based on account selector value

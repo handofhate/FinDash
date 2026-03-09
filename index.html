@@ -294,16 +294,45 @@
         <div class="settings-tabs">
           <button class="settings-tab-btn active" data-tab="display">Display</button>
           <button class="settings-tab-btn" data-tab="categories">Categories</button>
+          <button class="settings-tab-btn" data-tab="rulesets">Rulesets</button>
           <button class="settings-tab-btn" data-tab="filters">Import Filters</button>
         </div>
         <div id="settings-display-tab" class="settings-tab-content" style="padding:20px"></div>
         <div id="settings-categories-tab" class="settings-tab-content hidden" style="padding:20px"></div>
+        <div id="settings-rulesets-tab" class="settings-tab-content hidden" style="padding:20px"></div>
         <div id="settings-filters-tab" class="settings-tab-content hidden" style="padding:20px"></div>
       </div>
     </div>
   </div>
 
+  <!-- ── TRANSACTION EDIT MODAL ────────────────────────────────── -->
+  <div id="modal-tx-edit" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-tx-edit-title">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h2 id="modal-tx-edit-title">Edit Transaction</h2>
+        <button class="modal-close" data-close="modal-tx-edit">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-tx-edit-body"></div>
+    </div>
+  </div>
 
+  <!-- ── CONFLICT WARNING MODAL ─────────────────────────────────── -->
+  <div id="modal-conflict-warning" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-conflict-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modal-conflict-title">Rule Conflict Warning</h2>
+        <button class="modal-close" data-close="modal-conflict-warning">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="conflict-warning-text"></p>
+        <div id="conflict-choices" style="margin-top:15px"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close="modal-conflict-warning">Cancel</button>
+        <button type="button" id="btn-conflict-proceed" class="btn btn-primary">Proceed</button>
+      </div>
+    </div>
+  </div>
   <!-- ── TOAST ──────────────────────────────────────────────────── -->
   <div id="toast" class="toast hidden"></div>
 
@@ -323,6 +352,7 @@
   <script src="js/settings.js"></script>
   <script src="js/bills.js"></script>
   <script src="js/transactions.js"></script>
+  <script src="js/modal-tx-edit.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/app.js"></script>
 

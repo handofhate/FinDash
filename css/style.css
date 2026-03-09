@@ -289,6 +289,7 @@ canvas { max-height: 280px; }
   width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto;
 }
 .modal-sm { max-width: 380px; }
+.modal-lg { max-width: 720px; }
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--border);
@@ -303,6 +304,61 @@ canvas { max-height: 280px; }
 .modal-footer {
   display: flex; gap: 10px; justify-content: flex-end;
   padding-top: 6px;
+}
+
+/* ── Transaction Edit Modal ───────────────────────────────────── */
+.tx-edit-field {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 12px; background: var(--bg);
+}
+.tx-edit-field-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 8px;
+}
+.tx-edit-field-header label {
+  font-weight: 600; color: var(--text); font-size: 13px; flex: 1;
+}
+.tx-edit-scope {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--radius-sm); padding: 5px 8px;
+  font-size: 12px; cursor: pointer;
+}
+.tx-edit-value {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--radius-sm); padding: 8px 10px;
+  font-size: 13px; transition: border-color 0.15s;
+}
+.tx-edit-value:focus {
+  outline: none; border-color: var(--accent);
+}
+.tx-edit-match-dropdown-btn {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-muted); border-radius: var(--radius-sm);
+  cursor: pointer; font-size: 12px; transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.tx-edit-match-dropdown-btn:hover {
+  background: var(--bg-hover); color: var(--text);
+}
+.tx-edit-match-dropdown {
+  background: var(--bg-hover); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px; margin-top: 8px; font-size: 12px;
+}
+.tx-edit-match-dropdown label {
+  display: block; margin-bottom: 5px; color: var(--text-muted);
+}
+.tx-edit-match-on {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--radius-sm); padding: 6px 8px;
+  font-size: 12px; cursor: pointer; margin-bottom: 8px;
+}
+.tx-edit-match-value {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--radius-sm); padding: 6px 8px;
+  font-size: 12px; transition: border-color 0.15s;
+}
+.tx-edit-match-value:focus {
+  outline: none; border-color: var(--accent);
 }
 
 /* ── Form Elements ────────────────────────────────────────────── */
@@ -480,6 +536,15 @@ body.compact-rows tbody td { padding: 5px 12px; font-size: 12px; }
 .category-name { font-weight: 600; font-size: 14px; margin-right: 10px; }
 .category-subs { font-size: 12px; color: var(--text-muted); }
 .category-row-actions { display: flex; gap: 4px; }
+
+.ruleset-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg); margin-bottom: 10px;
+}
+.ruleset-row-content { flex: 1; }
+.ruleset-row-actions { display: flex; gap: 4px; margin-left: 10px; flex-shrink: 0; }
+
 .modal-lg { max-width: 600px; }
 
 .settings-tabs {

@@ -137,6 +137,36 @@ async function autoAssignCategories(uid, rows) {
   });
 }
 
+// Apply rulesets to import rows (after auto-assignment)
+async function applyRulesets(rows) {
+  const rulesets = await getRulesets(auth.currentUser?.uid);
+  if (!rulesets.length) return;
+
+  rows.forEach(row => {
+    rulesets.forEach(rs => {
+      if (!rs.edits || !Array.isArray(rs.edits)) return;
+      rs.edits.forEach(edit => {
+        // Only apply if scope includes future imports
+        if (edit.scope !== 'future_only' && edit.scope !== 'all') return;
+
+        // Check if this row matches the criteria
+        let matches = false;
+        if (edit.matchOn === 'description') {
+          matches = (row.description || '').toLowerCase().includes(edit.matchValue.toLowerCase());
+        } else if (edit.matchOn === 'category') {
+          matches = (row.category || '').toLowerCase() === edit.matchValue.toLowerCase();
+        } else if (edit.matchOn === 'amount') {
+          matches = String(row.amount || '').trim() === String(edit.matchValue).trim();
+        }
+
+        if (matches) {
+          row[edit.field] = edit.newValue;
+        }
+      });
+    });
+  });
+}
+
 // ─── Import Flow ──────────────────────────────────────────────────────────────
 async function handleCSVFile(file, uid) {
   showToast('Parsing CSV…', 'info');
@@ -151,6 +181,9 @@ async function handleCSVFile(file, uid) {
 
     // Auto-assign categories to new rows based on existing patterns
     await autoAssignCategories(uid, newRows);
+
+    // Apply rulesets from user-defined rules
+    await applyRulesets(newRows);
 
     // Apply import filter rules
     const filters = await getImportFilters(uid);
