@@ -254,6 +254,42 @@ tbody td {
 .import-preview-actions { display: flex; gap: 10px; margin-top: 14px; }
 .import-preview .table-wrap { max-height: 260px; overflow-y: auto; }
 
+.import-suggestions-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  padding: 10px 12px;
+  margin: 0 0 12px 0;
+}
+.import-sugg-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.import-sugg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.import-sugg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px dashed var(--border);
+}
+.import-sugg-row:first-child {
+  border-top: none;
+}
+.import-sugg-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 /* ── Charts ───────────────────────────────────────────────────── */
 .charts-grid {
   display: grid;

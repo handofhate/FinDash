@@ -3,6 +3,8 @@
 let _pendingImport = [];  // rows waiting for user confirmation
 let _showHidden    = false; // toggle to show/hide hidden transactions
 let _categoryDefs  = [];   // cached category definitions
+let _pendingCategorySuggestions = [];
+let _pendingSubcategorySuggestions = [];
 
 // ─── CSV Parsing ──────────────────────────────────────────────────────────────
 function parseTransactionCSV(file) {
@@ -273,6 +275,221 @@ async function autoAssignCategories(uid, rows) {
   });
 }
 
+function _collectCategorySuggestions(rows, categoryDefs) {
+  const existingNames = new Set((categoryDefs || []).map(c => String(c.name || '').toLowerCase()));
+  const suggestions = new Map();
+  rows.forEach(r => {
+    const name = String(r._categoryRecommendation || '').trim();
+    if (!name) return;
+
+    const isActuallyNew = !existingNames.has(name.toLowerCase());
+    if (!isActuallyNew) return;
+
+    const key = name.toLowerCase();
+    if (!suggestions.has(key)) {
+      suggestions.set(key, {
+        key,
+        name,
+        subcategories: new Set(),
+        sources: new Set(),
+        count: 0,
+      });
+    }
+
+    const item = suggestions.get(key);
+    const sub = String(r._subcategoryRecommendation || '').trim();
+    if (sub) item.subcategories.add(sub);
+    item.sources.add(String(r._recommendationSource || 'rules'));
+    item.count += 1;
+  });
+
+  return [...suggestions.values()].map(s => ({
+    key: s.key,
+    name: s.name,
+    subcategories: [...s.subcategories],
+    source: [...s.sources].join(', '),
+    count: s.count,
+  }));
+}
+
+function _collectSubcategorySuggestions(rows, categoryDefs) {
+  const byCategory = new Map((categoryDefs || []).map(c => [String(c.name || '').toLowerCase(), c]));
+  const suggestions = new Map();
+
+  rows.forEach(r => {
+    const category = String(r._categoryRecommendation || '').trim();
+    const subcategory = String(r._subcategoryRecommendation || '').trim();
+    if (!category || !subcategory) return;
+
+    const catDef = byCategory.get(category.toLowerCase());
+    if (!catDef) return;
+
+    const exists = (catDef.subcategories || []).some(s => String(s).toLowerCase() === subcategory.toLowerCase());
+    if (exists) return;
+
+    const key = `${category.toLowerCase()}::${subcategory.toLowerCase()}`;
+    if (!suggestions.has(key)) {
+      suggestions.set(key, {
+        key,
+        category,
+        subcategory,
+        sources: new Set(),
+        count: 0,
+      });
+    }
+
+    const item = suggestions.get(key);
+    item.sources.add(String(r._recommendationSource || 'rules'));
+    item.count += 1;
+  });
+
+  return [...suggestions.values()].map(s => ({
+    key: s.key,
+    category: s.category,
+    subcategory: s.subcategory,
+    source: [...s.sources].join(', '),
+    count: s.count,
+  }));
+}
+
+function _refreshPendingSuggestions() {
+  _pendingCategorySuggestions = _collectCategorySuggestions(_pendingImport, _categoryDefs);
+  _pendingSubcategorySuggestions = _collectSubcategorySuggestions(_pendingImport, _categoryDefs);
+}
+
+function _renderImportSuggestionPanels() {
+  const wrap = document.getElementById('import-preview-table-wrap');
+  if (!wrap) return;
+
+  let catPanel = document.getElementById('import-category-suggestions');
+  if (!catPanel) {
+    catPanel = document.createElement('div');
+    catPanel.id = 'import-category-suggestions';
+    catPanel.className = 'import-suggestions-box hidden';
+    wrap.parentNode.insertBefore(catPanel, wrap);
+  }
+
+  let subPanel = document.getElementById('import-subcategory-suggestions');
+  if (!subPanel) {
+    subPanel = document.createElement('div');
+    subPanel.id = 'import-subcategory-suggestions';
+    subPanel.className = 'import-suggestions-box hidden';
+    wrap.parentNode.insertBefore(subPanel, wrap);
+  }
+
+  if (_pendingCategorySuggestions.length) {
+    const list = _pendingCategorySuggestions.map(s => `
+      <div class="import-sugg-row" data-key="${esc(s.key)}">
+        <div>
+          <strong>${esc(s.name)}</strong>
+          ${s.subcategories.length ? `<span class="text-muted"> · ${esc(s.subcategories.join(', '))}</span>` : ''}
+          <div class="text-muted" style="font-size:11px">${s.count} transaction(s), source: ${esc(s.source)}</div>
+        </div>
+        <div class="import-sugg-actions">
+          <button class="btn btn-primary btn-sm btn-accept-category-suggestion" data-key="${esc(s.key)}">Accept</button>
+          <button class="btn btn-ghost btn-sm btn-decline-category-suggestion" data-key="${esc(s.key)}">Decline</button>
+        </div>
+      </div>
+    `).join('');
+
+    catPanel.innerHTML = `
+      <div class="import-sugg-header">
+        <div>
+          <strong>Suggested New Categories</strong>
+          <div class="text-muted" style="font-size:12px">Accept or decline each category suggestion.</div>
+        </div>
+      </div>
+      <div class="import-sugg-list">${list}</div>
+    `;
+    catPanel.classList.remove('hidden');
+  } else {
+    catPanel.classList.add('hidden');
+    catPanel.innerHTML = '';
+  }
+
+  if (_pendingSubcategorySuggestions.length) {
+    const list = _pendingSubcategorySuggestions.map(s => `
+      <div class="import-sugg-row" data-key="${esc(s.key)}">
+        <div>
+          <strong>${esc(s.category)}</strong>
+          <span class="text-muted"> → ${esc(s.subcategory)}</span>
+          <div class="text-muted" style="font-size:11px">${s.count} transaction(s), source: ${esc(s.source)}</div>
+        </div>
+        <div class="import-sugg-actions">
+          <button class="btn btn-primary btn-sm btn-accept-subcategory-suggestion" data-key="${esc(s.key)}">Accept</button>
+          <button class="btn btn-ghost btn-sm btn-decline-subcategory-suggestion" data-key="${esc(s.key)}">Decline</button>
+        </div>
+      </div>
+    `).join('');
+
+    subPanel.innerHTML = `
+      <div class="import-sugg-header">
+        <div>
+          <strong>Suggested New Subcategories</strong>
+          <div class="text-muted" style="font-size:12px">Accept or decline each subcategory suggestion.</div>
+        </div>
+      </div>
+      <div class="import-sugg-list">${list}</div>
+    `;
+    subPanel.classList.remove('hidden');
+  } else {
+    subPanel.classList.add('hidden');
+    subPanel.innerHTML = '';
+  }
+}
+
+async function acceptCategorySuggestion(uid, key) {
+  const suggestion = _pendingCategorySuggestions.find(s => s.key === key);
+  if (!suggestion) return;
+  const existing = await getCategoryDefinitions(uid);
+  const byName = new Map(existing.map(c => [String(c.name || '').toLowerCase(), c]));
+
+  const found = byName.get(suggestion.name.toLowerCase());
+  if (found) {
+    const merged = [...new Set([...(found.subcategories || []), ...(suggestion.subcategories || [])])];
+    await saveCategoryDefinition(uid, { id: found.id, name: found.name, subcategories: merged });
+  } else {
+    await saveCategoryDefinition(uid, { name: suggestion.name, subcategories: suggestion.subcategories || [] });
+  }
+
+  _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== key);
+  _categoryDefs = await getCategoryDefinitions(uid);
+  _refreshPendingSuggestions();
+  _renderImportSuggestionPanels();
+  showToast(`Added category "${suggestion.name}"`, 'success');
+}
+
+function declineCategorySuggestion(key) {
+  _pendingCategorySuggestions = _pendingCategorySuggestions.filter(s => s.key !== key);
+  _renderImportSuggestionPanels();
+}
+
+async function acceptSubcategorySuggestion(uid, key) {
+  const suggestion = _pendingSubcategorySuggestions.find(s => s.key === key);
+  if (!suggestion) return;
+
+  const defs = await getCategoryDefinitions(uid);
+  const cat = defs.find(c => String(c.name || '').toLowerCase() === suggestion.category.toLowerCase());
+
+  if (cat) {
+    const merged = [...new Set([...(cat.subcategories || []), suggestion.subcategory])];
+    await saveCategoryDefinition(uid, { id: cat.id, name: cat.name, subcategories: merged });
+  } else {
+    await saveCategoryDefinition(uid, { name: suggestion.category, subcategories: [suggestion.subcategory] });
+  }
+
+  _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.filter(s => s.key !== key);
+  _categoryDefs = await getCategoryDefinitions(uid);
+  _refreshPendingSuggestions();
+  _renderImportSuggestionPanels();
+  showToast(`Added subcategory "${suggestion.subcategory}"`, 'success');
+}
+
+function declineSubcategorySuggestion(key) {
+  _pendingSubcategorySuggestions = _pendingSubcategorySuggestions.filter(s => s.key !== key);
+  _renderImportSuggestionPanels();
+}
+
 // ─── Import Flow ──────────────────────────────────────────────────────────────
 async function handleCSVFile(file, uid) {
   showToast('Parsing CSV…', 'info');
@@ -292,6 +509,7 @@ async function handleCSVFile(file, uid) {
     const filters = await getImportFilters(uid);
     const { kept, skipped, flagged } = applyImportFilters(newRows, filters);
     _pendingImport = kept;
+    _refreshPendingSuggestions();
 
     // Detect account number from Transaction ID
     const detectedAcctNum = _extractAccountNumber(rows[0]?.txId || '');
@@ -322,6 +540,7 @@ async function handleCSVFile(file, uid) {
     stats.innerHTML = statsHTML;
 
     const wrap = document.getElementById('import-preview-table-wrap');
+    _renderImportSuggestionPanels();
     wrap.innerHTML = buildTxTable(kept.slice(0, 20), [], true);
     if (kept.length > 20) {
       wrap.innerHTML += `<div class="text-muted" style="padding:8px 12px">…and ${kept.length - 20} more</div>`;
@@ -364,6 +583,9 @@ async function confirmImport(uid) {
   try {
     const { imported, skipped } = await importTransactions(uid, rowsWithAccount);
     _pendingImport = [];
+    _pendingCategorySuggestions = [];
+    _pendingSubcategorySuggestions = [];
+    _renderImportSuggestionPanels();
     document.getElementById('import-preview').classList.add('hidden');
     showToast(`Imported ${imported} transactions to "${accountName}" (${skipped} skipped)`, 'success');
     await renderTransactionsTab(uid);
@@ -376,6 +598,9 @@ async function confirmImport(uid) {
 
 function cancelImport() {
   _pendingImport = [];
+  _pendingCategorySuggestions = [];
+  _pendingSubcategorySuggestions = [];
+  _renderImportSuggestionPanels();
   document.getElementById('import-preview').classList.add('hidden');
 }
 

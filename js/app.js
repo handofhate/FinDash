@@ -150,6 +150,20 @@ document.getElementById('btn-import-confirm').addEventListener('click', async ()
 
 document.getElementById('btn-import-cancel').addEventListener('click', cancelImport);
 
+document.getElementById('import-preview').addEventListener('click', async e => {
+  const acceptCategoryBtn = e.target.closest('.btn-accept-category-suggestion');
+  const declineCategoryBtn = e.target.closest('.btn-decline-category-suggestion');
+  const acceptSubBtn = e.target.closest('.btn-accept-subcategory-suggestion');
+  const declineSubBtn = e.target.closest('.btn-decline-subcategory-suggestion');
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+
+  if (acceptCategoryBtn) await acceptCategorySuggestion(uid, acceptCategoryBtn.dataset.key);
+  if (declineCategoryBtn) declineCategorySuggestion(declineCategoryBtn.dataset.key);
+  if (acceptSubBtn) await acceptSubcategorySuggestion(uid, acceptSubBtn.dataset.key);
+  if (declineSubBtn) declineSubcategorySuggestion(declineSubBtn.dataset.key);
+});
+
 document.getElementById('btn-delete-all-txns').addEventListener('click', async () => {
   const uid = auth.currentUser?.uid;
   if (!uid) return;
