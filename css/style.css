@@ -384,7 +384,7 @@ canvas { max-height: 280px; }
   padding: 20px;
   opacity: 1;
   transform: translateY(0);
-  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+  transition: opacity 0.15s ease-out, transform 0.4s ease-out;
 }
 .tx-edit-dropdown.tx-edit-entering {
   opacity: 0;
