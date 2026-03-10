@@ -17,6 +17,7 @@ const SETTING_DEFAULTS = {
   theme:        'dark',
   compactRows:  false,
   hideZeroTx:   false,
+  animationMode: 'native',
   col_date:        true,
   col_description: true,
   col_category:    true,
@@ -164,6 +165,15 @@ function _renderDisplaySettings(s) {
       </label>
       <label class="settings-toggle-row">
         <input type="radio" name="theme" value="light" ${s.theme === 'light' ? 'checked' : ''}> Light mode
+      </label>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Animation Mode</div>
+      <label class="settings-toggle-row">
+        <input type="radio" name="animationMode" value="native" ${s.animationMode !== 'autoanimate' ? 'checked' : ''}> Native CSS (smooth height-based)
+      </label>
+      <label class="settings-toggle-row">
+        <input type="radio" name="animationMode" value="autoanimate" ${s.animationMode === 'autoanimate' ? 'checked' : ''}> AutoAnimate (library-based)
       </label>
     </div>
     <div class="settings-section">
@@ -349,6 +359,15 @@ function _wireDisplaySettings() {
   });
   document.querySelectorAll('#settings-display-tab input[name="theme"]').forEach(el => {
     el.addEventListener('change', () => { saveSetting('theme', el.value); applySettings(); });
+  });
+  document.querySelectorAll('#settings-display-tab input[name="animationMode"]').forEach(el => {
+    el.addEventListener('change', () => { 
+      saveSetting('animationMode', el.value);
+      if (typeof reinitTxListAnimation === 'function') {
+        reinitTxListAnimation();
+      }
+      showToast(`Animation mode set to ${el.value}`, 'success');
+    });
   });
 }
 

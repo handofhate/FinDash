@@ -499,6 +499,11 @@ async function loadAndRenderTxList(uid) {
   // Render initial batch
   _renderTxBatch(bills, true);
   _setupTxScrollObserver();
+  
+  // Initialize animation system (native or AutoAnimate)
+  if (typeof initTxListAnimation === 'function') {
+    initTxListAnimation();
+  }
 }
 
 // ─── Lazy Loading Helpers ─────────────────────────────────────────────────────

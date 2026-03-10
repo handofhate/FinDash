@@ -3,6 +3,7 @@
 let _currentTxEdit = null; // Track the transaction being edited
 let _activeEditRow = null; // Track the currently open edit row
 let _allTransactionsCache = { uid: null, data: null }; // reused for impact preview
+let _autoAnimateCleanup = null; // AutoAnimate cleanup function when enabled
 
 async function _getAllTransactionsForEdit(uid, { refresh = false } = {}) {
   if (!refresh && _allTransactionsCache.uid === uid && Array.isArray(_allTransactionsCache.data)) {
@@ -11,6 +12,34 @@ async function _getAllTransactionsForEdit(uid, { refresh = false } = {}) {
   const all = await getAllTransactions(uid);
   _allTransactionsCache = { uid, data: all };
   return all;
+}
+
+// Initialize animation system based on settings
+function initTxListAnimation() {
+  const settings = getSettings();
+  const animationMode = settings.animationMode || 'native';
+  
+  // Clean up existing AutoAnimate if present
+  if (_autoAnimateCleanup) {
+    _autoAnimateCleanup();
+    _autoAnimateCleanup = null;
+  }
+  
+  // Enable AutoAnimate if selected
+  if (animationMode === 'autoanimate' && typeof autoAnimate !== 'undefined') {
+    const txList = document.getElementById('tx-list');
+    if (txList) {
+      _autoAnimateCleanup = autoAnimate(txList, {
+        duration: 300,
+        easing: 'ease-in-out'
+      });
+    }
+  }
+}
+
+// Reinitialize animation (exposed globally for settings toggle)
+function reinitTxListAnimation() {
+  initTxListAnimation();
 }
 
 // Toggle inline edit dropdown for a given transaction
@@ -78,6 +107,17 @@ function _animateOpenRow(row) {
   const dropdown = row?.querySelector('.tx-edit-dropdown');
   if (!dropdown) return;
 
+  const settings = getSettings();
+  const animationMode = settings.animationMode || 'native';
+
+  // AutoAnimate mode: just add classes and let the library animate
+  if (animationMode === 'autoanimate') {
+    dropdown.classList.add('tx-edit-open');
+    dropdown.classList.remove('tx-edit-collapsed');
+    return;
+  }
+
+  // Native mode: manual height animation
   dropdown.style.height = '0px';
   requestAnimationFrame(() => {
     const targetHeight = dropdown.scrollHeight;
@@ -102,6 +142,17 @@ function _animateCloseRow(row, done) {
     return;
   }
 
+  const settings = getSettings();
+  const animationMode = settings.animationMode || 'native';
+
+  // AutoAnimate mode: just remove and let the library animate
+  if (animationMode === 'autoanimate') {
+    row.remove();
+    if (done) done();
+    return;
+  }
+
+  // Native mode: manual height animation
   // Pin to exact height first so closing transition always runs from current size.
   dropdown.style.height = `${dropdown.scrollHeight}px`;
   dropdown.offsetHeight;
