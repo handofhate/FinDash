@@ -21,15 +21,18 @@ async function toggleTxEditInline(uid, transaction, categories, bills) {
   // Check if this transaction's edit row is already open
   const existingEditRow = txRow.nextElementSibling;
   if (existingEditRow?.classList.contains('tx-edit-row')) {
-    existingEditRow.remove();
-    _currentTxEdit = null;
-    _activeEditRow = null;
-    _removeEscapeHandler();
+    _closeTxEditDropdown();
     return;
   }
 
-  // Close any other open edit rows
-  document.querySelectorAll('.tx-edit-row').forEach(row => row.remove());
+  // Close any other open edit rows with animation
+  const otherEditRows = document.querySelectorAll('.tx-edit-row');
+  otherEditRows.forEach(row => {
+    const dropdown = row.querySelector('.tx-edit-dropdown');
+    if (dropdown) dropdown.classList.add('tx-edit-entering');
+  });
+  // Remove after animation completes
+  setTimeout(() => otherEditRows.forEach(row => row.remove()), 250);
 
   const cachedAll = (_allTransactionsCache.uid === uid && Array.isArray(_allTransactionsCache.data))
     ? _allTransactionsCache.data
@@ -47,10 +50,18 @@ async function toggleTxEditInline(uid, transaction, categories, bills) {
   const colCount = txRow.querySelectorAll('td').length;
   const editRow = document.createElement('tr');
   editRow.className = 'tx-edit-row';
-  editRow.innerHTML = `<td colspan="${colCount}"><div class="tx-edit-dropdown">${_buildTxEditForm(transaction, categories)}</div></td>`;
+  editRow.innerHTML = `<td colspan="${colCount}"><div class="tx-edit-dropdown tx-edit-entering">${_buildTxEditForm(transaction, categories)}</div></td>`;
   
   txRow.after(editRow);
   _activeEditRow = editRow;
+
+  // Trigger smooth slide-in animation
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const dropdown = editRow.querySelector('.tx-edit-dropdown');
+      if (dropdown) dropdown.classList.remove('tx-edit-entering');
+    });
+  });
 
   // Wire up field change listeners
   _wireTxEditForm(uid, transaction, categories, bills);
@@ -73,6 +84,32 @@ async function toggleTxEditInline(uid, transaction, categories, bills) {
   _addEscapeHandler();
 }
 
+// Smoothly close the edit dropdown with animation
+function _closeTxEditDropdown(callback) {
+  if (!_activeEditRow) {
+    if (callback) callback();
+    return;
+  }
+  
+  const dropdown = _activeEditRow.querySelector('.tx-edit-dropdown');
+  if (dropdown) {
+    dropdown.classList.add('tx-edit-entering');
+    setTimeout(() => {
+      _activeEditRow?.remove();
+      _activeEditRow = null;
+      _currentTxEdit = null;
+      _removeEscapeHandler();
+      if (callback) callback();
+    }, 250);
+  } else {
+    _activeEditRow?.remove();
+    _activeEditRow = null;
+    _currentTxEdit = null;
+    _removeEscapeHandler();
+    if (callback) callback();
+  }
+}
+
 // Close edit dropdown with Escape key
 function _addEscapeHandler() {
   document.addEventListener('keydown', _escapeHandler);
@@ -84,10 +121,7 @@ function _removeEscapeHandler() {
 
 function _escapeHandler(e) {
   if (e.key === 'Escape' && _activeEditRow) {
-    _activeEditRow.remove();
-    _activeEditRow = null;
-    _currentTxEdit = null;
-    _removeEscapeHandler();
+    _closeTxEditDropdown();
   }
 }
 
@@ -246,10 +280,7 @@ function _wireTxEditForm(uid, tx, categories, bills) {
   const cancelBtn = document.getElementById('btn-cancel-tx-edit');
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => {
-      _activeEditRow?.remove();
-      _activeEditRow = null;
-      _currentTxEdit = null;
-      _removeEscapeHandler();
+      _closeTxEditDropdown();
     });
   }
 
@@ -465,13 +496,11 @@ async function _applyTxEdits(uid, tx, edits) {
       }
     }
 
-    _activeEditRow?.remove();
-    _activeEditRow = null;
-    _currentTxEdit = null;
-    _allTransactionsCache = { uid: null, data: null };
-    _removeEscapeHandler();
-    await loadAndRenderTxList(uid);
-    showToast('Changes saved', 'success');
+    _closeTxEditDropdown(async () => {
+      _allTransactionsCache = { uid: null, data: null };
+      await loadAndRenderTxList(uid);
+      showToast('Changes saved', 'success');
+    });
   } catch (err) {
     showToast('Error saving changes: ' + err.message, 'error');
     console.error(err);

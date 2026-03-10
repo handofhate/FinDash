@@ -375,7 +375,13 @@ canvas { max-height: 280px; }
 }
 .tx-edit-dropdown {
   padding: 20px;
-  animation: slideDown 0.2s ease-out;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+}
+.tx-edit-dropdown.tx-edit-entering {
+  opacity: 0;
+  transform: translateY(-10px);
 }
 .tx-edit-dropdown form {
   display: flex;
@@ -384,20 +390,6 @@ canvas { max-height: 280px; }
 }
 .tx-edit-dropdown .modal-footer {
   margin-top: 10px;
-}
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    max-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-  }
-  to {
-    opacity: 1;
-    max-height: 1000px;
-    padding-top: 20px;
-    padding-bottom: 20px;
-  }
 }
 .tx-edit-field {
   border: 1px solid var(--border); border-radius: var(--radius-sm);
