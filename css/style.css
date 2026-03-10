@@ -384,11 +384,12 @@ canvas { max-height: 280px; }
   padding: 20px;
   opacity: 1;
   transform: translateY(0);
-  transition: opacity 0.15s ease-out, transform 0.4s ease-out;
+  will-change: transform, opacity;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .tx-edit-dropdown.tx-edit-entering {
   opacity: 0;
-  transform: translateY(-10px);
+  transform: translateY(-15px);
 }
 .tx-edit-dropdown form {
   display: flex;
