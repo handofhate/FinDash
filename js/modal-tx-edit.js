@@ -3,6 +3,7 @@
 let _currentTxEdit = null; // Track the transaction being edited
 let _activeEditRow = null; // Track the currently open edit row
 let _allTransactionsCache = { uid: null, data: null }; // reused for impact preview
+const TX_EDIT_ANIM_MS = 3000; // debug slow-motion; can be reduced after tuning
 
 async function _getAllTransactionsForEdit(uid, { refresh = false } = {}) {
   if (!refresh && _allTransactionsCache.uid === uid && Array.isArray(_allTransactionsCache.data)) {
@@ -27,12 +28,8 @@ async function toggleTxEditInline(uid, transaction, categories, bills) {
 
   // Close any other open edit rows with animation
   const otherEditRows = document.querySelectorAll('.tx-edit-row');
-  otherEditRows.forEach(row => {
-    const dropdown = row.querySelector('.tx-edit-dropdown');
-    if (dropdown) dropdown.classList.add('tx-edit-entering');
-  });
-  // Remove after animation completes
-  setTimeout(() => otherEditRows.forEach(row => row.remove()), 3000);
+  otherEditRows.forEach(row => _animateCloseRow(row));
+  _activeEditRow = null;
 
   const cachedAll = (_allTransactionsCache.uid === uid && Array.isArray(_allTransactionsCache.data))
     ? _allTransactionsCache.data
@@ -50,18 +47,12 @@ async function toggleTxEditInline(uid, transaction, categories, bills) {
   const colCount = txRow.querySelectorAll('td').length;
   const editRow = document.createElement('tr');
   editRow.className = 'tx-edit-row';
-  editRow.innerHTML = `<td colspan="${colCount}"><div class="tx-edit-dropdown tx-edit-entering">${_buildTxEditForm(transaction, categories)}</div></td>`;
+  editRow.innerHTML = `<td colspan="${colCount}"><div class="tx-edit-dropdown tx-edit-collapsed">${_buildTxEditForm(transaction, categories)}</div></td>`;
   
   txRow.after(editRow);
   _activeEditRow = editRow;
 
-  // Trigger smooth slide-in animation
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      const dropdown = editRow.querySelector('.tx-edit-dropdown');
-      if (dropdown) dropdown.classList.remove('tx-edit-entering');
-    });
-  });
+  _animateOpenRow(editRow);
 
   // Wire up field change listeners
   _wireTxEditForm(uid, transaction, categories, bills);
@@ -84,30 +75,66 @@ async function toggleTxEditInline(uid, transaction, categories, bills) {
   _addEscapeHandler();
 }
 
+function _animateOpenRow(row) {
+  const dropdown = row?.querySelector('.tx-edit-dropdown');
+  if (!dropdown) return;
+
+  dropdown.style.maxHeight = '0px';
+  requestAnimationFrame(() => {
+    const targetHeight = dropdown.scrollHeight;
+    dropdown.classList.add('tx-edit-open');
+    dropdown.classList.remove('tx-edit-collapsed');
+    dropdown.style.maxHeight = `${targetHeight}px`;
+  });
+
+  const onDone = (e) => {
+    if (e.propertyName !== 'max-height') return;
+    dropdown.style.maxHeight = 'none';
+    dropdown.removeEventListener('transitionend', onDone);
+  };
+  dropdown.addEventListener('transitionend', onDone);
+}
+
+function _animateCloseRow(row, done) {
+  const dropdown = row?.querySelector('.tx-edit-dropdown');
+  if (!row || !dropdown) {
+    row?.remove();
+    if (done) done();
+    return;
+  }
+
+  // If open state uses max-height none, pin it first so transition can run.
+  if (dropdown.style.maxHeight === 'none' || !dropdown.style.maxHeight) {
+    dropdown.style.maxHeight = `${dropdown.scrollHeight}px`;
+    dropdown.offsetHeight;
+  }
+
+  dropdown.classList.remove('tx-edit-open');
+  dropdown.classList.add('tx-edit-collapsed');
+  dropdown.style.maxHeight = '0px';
+
+  setTimeout(() => {
+    row.remove();
+    if (done) done();
+  }, TX_EDIT_ANIM_MS);
+}
+
 // Smoothly close the edit dropdown with animation
 function _closeTxEditDropdown(callback) {
   if (!_activeEditRow) {
     if (callback) callback();
     return;
   }
-  
-  const dropdown = _activeEditRow.querySelector('.tx-edit-dropdown');
-  if (dropdown) {
-    dropdown.classList.add('tx-edit-entering');
-    setTimeout(() => {
-      _activeEditRow?.remove();
+
+  const rowToClose = _activeEditRow;
+  _animateCloseRow(rowToClose, () => {
+    if (_activeEditRow === rowToClose) {
       _activeEditRow = null;
       _currentTxEdit = null;
       _removeEscapeHandler();
-      if (callback) callback();
-    }, 3000);
-  } else {
-    _activeEditRow?.remove();
-    _activeEditRow = null;
-    _currentTxEdit = null;
-    _removeEscapeHandler();
+    }
     if (callback) callback();
-  }
+  });
 }
 
 // Close edit dropdown with Escape key
