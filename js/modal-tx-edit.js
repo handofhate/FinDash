@@ -3,7 +3,6 @@
 let _currentTxEdit = null; // Track the transaction being edited
 let _activeEditRow = null; // Track the currently open edit row
 let _allTransactionsCache = { uid: null, data: null }; // reused for impact preview
-const TX_EDIT_ANIM_MS = 3000; // debug slow-motion; can be reduced after tuning
 
 async function _getAllTransactionsForEdit(uid, { refresh = false } = {}) {
   if (!refresh && _allTransactionsCache.uid === uid && Array.isArray(_allTransactionsCache.data)) {
@@ -79,17 +78,17 @@ function _animateOpenRow(row) {
   const dropdown = row?.querySelector('.tx-edit-dropdown');
   if (!dropdown) return;
 
-  dropdown.style.maxHeight = '0px';
+  dropdown.style.height = '0px';
   requestAnimationFrame(() => {
     const targetHeight = dropdown.scrollHeight;
     dropdown.classList.add('tx-edit-open');
     dropdown.classList.remove('tx-edit-collapsed');
-    dropdown.style.maxHeight = `${targetHeight}px`;
+    dropdown.style.height = `${targetHeight}px`;
   });
 
   const onDone = (e) => {
-    if (e.propertyName !== 'max-height') return;
-    dropdown.style.maxHeight = 'none';
+    if (e.propertyName !== 'height') return;
+    dropdown.style.height = 'auto';
     dropdown.removeEventListener('transitionend', onDone);
   };
   dropdown.addEventListener('transitionend', onDone);
@@ -103,20 +102,23 @@ function _animateCloseRow(row, done) {
     return;
   }
 
-  // If open state uses max-height none, pin it first so transition can run.
-  if (dropdown.style.maxHeight === 'none' || !dropdown.style.maxHeight) {
-    dropdown.style.maxHeight = `${dropdown.scrollHeight}px`;
-    dropdown.offsetHeight;
-  }
+  // Pin to exact height first so closing transition always runs from current size.
+  dropdown.style.height = `${dropdown.scrollHeight}px`;
+  dropdown.offsetHeight;
 
   dropdown.classList.remove('tx-edit-open');
   dropdown.classList.add('tx-edit-collapsed');
-  dropdown.style.maxHeight = '0px';
+  requestAnimationFrame(() => {
+    dropdown.style.height = '0px';
+  });
 
-  setTimeout(() => {
+  const onDone = (e) => {
+    if (e.propertyName !== 'height') return;
     row.remove();
+    dropdown.removeEventListener('transitionend', onDone);
     if (done) done();
-  }, TX_EDIT_ANIM_MS);
+  };
+  dropdown.addEventListener('transitionend', onDone);
 }
 
 // Smoothly close the edit dropdown with animation

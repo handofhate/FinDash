@@ -381,28 +381,29 @@ canvas { max-height: 280px; }
   border-bottom: none;
 }
 .tx-edit-dropdown {
-  max-height: 0;
+  height: 0;
   overflow: hidden;
   padding: 0 20px;
   opacity: 0;
-  transform: translateY(-12px);
-  border-top: 2px solid var(--accent);
-  border-bottom: 2px solid var(--accent);
-  will-change: transform, opacity;
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  will-change: height, padding, opacity;
   transition:
-    max-height 3s cubic-bezier(0.4, 0, 0.2, 1),
+    height 3s cubic-bezier(0.4, 0, 0.2, 1),
     padding 3s cubic-bezier(0.4, 0, 0.2, 1),
-    transform 3s cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 0.25s ease-out;
+    opacity 0.2s ease-out,
+    border-color 0.2s ease-out;
 }
 .tx-edit-dropdown.tx-edit-open {
   padding: 20px;
   opacity: 1;
-  transform: translateY(0);
+  border-top-color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 .tx-edit-dropdown.tx-edit-collapsed {
   opacity: 0;
-  transform: translateY(-12px);
+  border-top-color: transparent;
+  border-bottom-color: transparent;
 }
 .tx-edit-dropdown form {
   display: flex;
