@@ -273,6 +273,13 @@ html, body {
 
 /* ── Table ────────────────────────────────────────────────────── */
 .table-wrap { overflow-x: auto; }
+.tx-load-sentinel {
+  text-align: center;
+  padding: 12px 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
 table {
   width: 100%; border-collapse: collapse;
 }

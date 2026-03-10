@@ -5,6 +5,11 @@ let _showHidden    = false; // toggle to show/hide hidden transactions
 let _categoryDefs  = [];   // cached category definitions
 let _txSort        = { key: 'col_date', dir: 'desc' }; // default chronological (newest first)
 let _lastRenderedTxns = []; // cache currently rendered transactions for row-click editing
+let _allFilteredTxns = []; // all transactions after filtering, before lazy render
+let _renderedCount = 0; // how many transactions currently rendered
+let _txScrollObserver = null; // intersection observer for lazy loading
+
+const TX_BATCH_SIZE = 50; // render this many transactions per batch
 
 function setTxSort(key, dir) {
   if (key) _txSort.key = key;
@@ -466,8 +471,11 @@ async function loadAndRenderTxList(uid) {
 
   if (!sortedVisibleTxns.length) {
     _lastRenderedTxns = [];
+    _allFilteredTxns = [];
+    _renderedCount = 0;
     listEl.innerHTML = '<div class="empty-state">No transactions found. Import a CSV to get started.</div>';
     document.getElementById('tx-summary').classList.add('hidden');
+    _disconnectTxScrollObserver();
     return;
   }
 
@@ -483,8 +491,89 @@ async function loadAndRenderTxList(uid) {
   document.getElementById('tx-count').textContent        = summaryTxns.length;
   document.getElementById('tx-summary').classList.remove('hidden');
 
-  _lastRenderedTxns = sortedVisibleTxns;
-  listEl.innerHTML = buildTxTable(sortedVisibleTxns, bills, false);
+  // Store all transactions for lazy loading
+  _allFilteredTxns = sortedVisibleTxns;
+  _lastRenderedTxns = [];
+  _renderedCount = 0;
+  
+  // Render initial batch
+  _renderTxBatch(bills, true);
+  _setupTxScrollObserver();
+}
+
+// ─── Lazy Loading Helpers ─────────────────────────────────────────────────────
+
+function _renderTxBatch(bills, isInitial = false) {
+  const listEl = document.getElementById('tx-list');
+  const start = _renderedCount;
+  const end = Math.min(start + TX_BATCH_SIZE, _allFilteredTxns.length);
+  const batch = _allFilteredTxns.slice(start, end);
+  
+  if (batch.length === 0) return;
+  
+  _renderedCount = end;
+  _lastRenderedTxns.push(...batch);
+  
+  const tableHTML = buildTxTable(batch, bills, false);
+  
+  if (isInitial) {
+    listEl.innerHTML = tableHTML;
+    // Add sentinel element for intersection observer
+    if (end < _allFilteredTxns.length) {
+      const sentinel = document.createElement('div');
+      sentinel.id = 'tx-load-sentinel';
+      sentinel.className = 'tx-load-sentinel';
+      sentinel.textContent = `Loading more... (${_renderedCount} of ${_allFilteredTxns.length})`;
+      listEl.appendChild(sentinel);
+    }
+  } else {
+    // Append rows to existing table
+    const existingTable = listEl.querySelector('table tbody');
+    const sentinel = document.getElementById('tx-load-sentinel');
+    
+    if (existingTable) {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = tableHTML;
+      const newRows = tempDiv.querySelector('tbody')?.children || [];
+      Array.from(newRows).forEach(row => existingTable.appendChild(row));
+    }
+    
+    // Update or remove sentinel
+    if (end >= _allFilteredTxns.length && sentinel) {
+      sentinel.remove();
+      _disconnectTxScrollObserver();
+    } else if (sentinel) {
+      sentinel.textContent = `Loading more... (${_renderedCount} of ${_allFilteredTxns.length})`;
+    }
+  }
+}
+
+function _setupTxScrollObserver() {
+  _disconnectTxScrollObserver();
+  
+  const sentinel = document.getElementById('tx-load-sentinel');
+  if (!sentinel) return;
+  
+  _txScrollObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting && _renderedCount < _allFilteredTxns.length) {
+        _renderTxBatch(_billsCache || [], false);
+      }
+    });
+  }, {
+    root: null,
+    rootMargin: '200px', // Start loading 200px before sentinel comes into view
+    threshold: 0
+  });
+  
+  _txScrollObserver.observe(sentinel);
+}
+
+function _disconnectTxScrollObserver() {
+  if (_txScrollObserver) {
+    _txScrollObserver.disconnect();
+    _txScrollObserver = null;
+  }
 }
 
 // ─── Recurring Bill Detection ──────────────────────────────────────────────────
