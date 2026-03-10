@@ -21,7 +21,13 @@ function initTxListAnimation() {
   
   // Clean up existing AutoAnimate if present
   if (_autoAnimateCleanup) {
-    _autoAnimateCleanup();
+    if (typeof _autoAnimateCleanup === 'function') {
+      _autoAnimateCleanup();
+    } else if (typeof _autoAnimateCleanup.destroy === 'function') {
+      _autoAnimateCleanup.destroy();
+    } else if (typeof _autoAnimateCleanup.disable === 'function') {
+      _autoAnimateCleanup.disable();
+    }
     _autoAnimateCleanup = null;
   }
   
@@ -114,10 +120,16 @@ function _animateOpenRow(row) {
   if (animationMode === 'autoanimate') {
     dropdown.classList.add('tx-edit-open');
     dropdown.classList.remove('tx-edit-collapsed');
+    // Release native collapsed constraints so AutoAnimate can expand naturally.
+    dropdown.style.height = 'auto';
+    dropdown.style.overflow = 'visible';
+    dropdown.style.transition = 'none';
     return;
   }
 
   // Native mode: manual height animation
+  dropdown.style.transition = '';
+  dropdown.style.overflow = 'hidden';
   dropdown.style.height = '0px';
   requestAnimationFrame(() => {
     const targetHeight = dropdown.scrollHeight;
