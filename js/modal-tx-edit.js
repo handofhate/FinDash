@@ -32,7 +32,7 @@ async function toggleTxEditInline(uid, transaction, categories, bills) {
     if (dropdown) dropdown.classList.add('tx-edit-entering');
   });
   // Remove after animation completes
-  setTimeout(() => otherEditRows.forEach(row => row.remove()), 350);
+  setTimeout(() => otherEditRows.forEach(row => row.remove()), 3000);
 
   const cachedAll = (_allTransactionsCache.uid === uid && Array.isArray(_allTransactionsCache.data))
     ? _allTransactionsCache.data
@@ -100,7 +100,7 @@ function _closeTxEditDropdown(callback) {
       _currentTxEdit = null;
       _removeEscapeHandler();
       if (callback) callback();
-    }, 350);
+    }, 3000);
   } else {
     _activeEditRow?.remove();
     _activeEditRow = null;
